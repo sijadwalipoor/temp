@@ -27,6 +27,11 @@ const EMPTY_KPIS = {
   totalSqlCalls: 0,
 }
 
+const toNumberOrZero = (value) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const metricsDropdownRef = useRef(null)
@@ -103,6 +108,25 @@ export default function Dashboard() {
     return result.reason?.response?.data?.message || result.reason?.message || fallbackMessage
   }
 
+  const extractEnvelopeData = (payload) => {
+    if (!payload || typeof payload !== 'object') return payload
+    if ('data' in payload && payload.data !== undefined && payload.data !== null) {
+      return payload.data
+    }
+    return payload
+  }
+
+  const normalizeKpiPayload = (payload) => {
+    const data = extractEnvelopeData(payload) || {}
+
+    return {
+      totalCpu: toNumberOrZero(data.totalCpu ?? data.totalCPU ?? data.total_cpu ?? data.cpu),
+      totalElapsed: toNumberOrZero(data.totalElapsed ?? data.totalELAPSED ?? data.total_elapsed ?? data.elapsed),
+      totalGetPages: toNumberOrZero(data.totalGetPages ?? data.totalGETPAGES ?? data.total_get_pages ?? data.getPages),
+      totalSqlCalls: toNumberOrZero(data.totalSqlCalls ?? data.totalSQLCalls ?? data.total_sql_calls ?? data.sqlCalls),
+    }
+  }
+
   useEffect(() => {
     const loadDashboardData = async () => {
       setLoading(true)
@@ -118,15 +142,10 @@ export default function Dashboard() {
         const failedSections = []
 
         if (kpiResult.status === 'fulfilled') {
-          const kpiPayload = kpiResult.value.data?.data ?? kpiResult.value.data ?? {}
-          setKpis({
-            totalCpu: Number(kpiPayload.totalCpu ?? 0),
-            totalElapsed: Number(kpiPayload.totalElapsed ?? 0),
-            totalGetPages: Number(kpiPayload.totalGetPages ?? 0),
-            totalSqlCalls: Number(kpiPayload.totalSqlCalls ?? 0),
-          })
+          const kpiPayload = normalizeKpiPayload(kpiResult.value.data)
+          setKpis(kpiPayload)
         } else {
-          setKpis(EMPTY_KPIS)
+          // Keep the previous successful KPI values when this request fails.
           failedSections.push(getApiErrorMessage(kpiResult, 'KPI data failed to load'))
         }
 
