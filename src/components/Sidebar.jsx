@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { useContext } from 'react'
+import { useContext, useState } from 'react'
 import { DashboardIcon, PackageIcon, SearchIcon, SettingsIcon } from '../utils/icons'
 import { AppContext } from '../context/AppContext'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 export default function Sidebar() {
   const location = useLocation()
   const { sidebarCollapsed, toggleSidebar } = useContext(AppContext)
+  const [logoLoadError, setLogoLoadError] = useState(false)
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: DashboardIcon },
@@ -22,12 +23,19 @@ export default function Sidebar() {
       {/* Logo / Header */}
       <div className="p-4 border-b border-gray-800 bg-gradient-to-r from-gray-900 to-gray-800 flex items-center justify-between">
         <div className={`flex items-center space-x-2 ${sidebarCollapsed ? 'hidden' : ''}`}>
-          <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-            <span className="text-white font-bold text-sm">DB</span>
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">DB2 Perf</h1>
-            <p className="text-xs text-gray-400">Performance Analyzer</p>
+          <div className="h-10 flex items-center">
+            {!logoLoadError ? (
+              <img
+                src="/logo.png"
+                alt="Company logo"
+                className="h-full w-auto object-contain"
+                onError={() => setLogoLoadError(true)}
+              />
+            ) : (
+              <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
+                <span className="text-white font-bold text-sm">DB</span>
+              </div>
+            )}
           </div>
         </div>
         <button
