@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import PackageAnalyzer from './pages/PackageAnalyzer'
 import StatementAnalyzer from './pages/StatementAnalyzer'
 import AccessPathViewer from './pages/AccessPathViewer'
+import WatchList from './pages/WatchList'
 import Settings from './pages/Settings'
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/package-analyzer" element={<PackageAnalyzer />} />
+                <Route path="/watch-list" element={<WatchList />} />
                 <Route path="/statement/:statementId" element={<StatementAnalyzer />} />
                 <Route path="/access-path" element={<AccessPathViewer />} />
                 <Route path="/settings" element={<Settings />} />

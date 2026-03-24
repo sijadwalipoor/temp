@@ -72,21 +72,21 @@ export default function FilterBar({ onFilterChange, sortOptions = [] }) {
         <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded border border-gray-200">
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2 uppercase text-xs tracking-wide">
-              Collection
+              Program
             </label>
             <input
               type="text"
-              placeholder="e.g., XDB2I"
+              placeholder="e.g., ORDER_SVC"
               className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary focus:border-primary"
             />
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2 uppercase text-xs tracking-wide">
-              Subsystem
+              Min Elapsed (ms)
             </label>
             <input
-              type="text"
-              placeholder="e.g., DB2"
+              type="number"
+              placeholder="0"
               className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary focus:border-primary"
             />
           </div>

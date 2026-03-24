@@ -4,9 +4,7 @@ import { getCookie, setCookie } from '../utils/cookies'
 export const AppContext = createContext()
 
 const defaultSettings = {
-  subsystem: 'DB2',
-  collection: 'XDB2I',
-  defaultTimeRange: '24h',
+  defaultIntervalHours: 24,
   statsWarningThreshold: 30,
   itemsPerPage: 50,
 }
@@ -14,7 +12,6 @@ const defaultSettings = {
 const defaultFilters = {
   search: '',
   sortBy: 'getPages',
-  timeRange: '24h',
 }
 
 const defaultUser = {

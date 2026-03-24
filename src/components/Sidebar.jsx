@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useContext, useState } from 'react'
-import { DashboardIcon, PackageIcon, SearchIcon, SettingsIcon } from '../utils/icons'
+import { DashboardIcon, EyeIcon, PackageIcon, SearchIcon, SettingsIcon } from '../utils/icons'
 import { AppContext } from '../context/AppContext'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -12,6 +12,7 @@ export default function Sidebar() {
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: DashboardIcon },
     { path: '/package-analyzer', label: 'Package Analyzer', icon: PackageIcon },
+    { path: '/watch-list', label: 'Watch List', icon: EyeIcon },
     { path: '/access-path', label: 'Access Path Viewer', icon: SearchIcon },
     { path: '/settings', label: 'Settings', icon: SettingsIcon },
   ]

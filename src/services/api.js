@@ -21,71 +21,65 @@ apiClient.interceptors.request.use((config) => {
 
 // API Endpoints for Dashboard
 export const dashboardAPI = {
-  getKPIs: (subsystem = 'DB2', collection = 'XDB2I', timeRange = '24h') => {
+  getKPIs: ({ from, to }) => {
     return apiClient.get('/dashboard/kpis', {
-      params: { subsystem, collection, timeRange }
+      params: { from, to }
     })
   },
 
-  getMetricsTrend: (subsystem = 'DB2', collection = 'XDB2I', timeRange = '24h') => {
+  getMetricsTrend: ({ from, to }) => {
     return apiClient.get('/dashboard/metrics-trend', {
-      params: { subsystem, collection, timeRange }
+      params: { from, to }
     })
   },
 
-  getWorstStatements: (
-    subsystem = 'DB2',
-    collection = 'XDB2I',
-    page = 1,
-    pageSize = 50,
-    sortBy = 'getPages'
-  ) => {
+  getWorstPackages: ({ from, to, page = 1, pageSize = 50, sortBy = 'getPages' } = {}) => {
+    return apiClient.get('/dashboard/worst-packages', {
+      params: { from, to, page, pageSize, sortBy }
+    })
+  },
+
+  getWorstStatements: ({ from, to, page = 1, pageSize = 50, sortBy = 'getPages' } = {}) => {
     return apiClient.get('/dashboard/worst-statements', {
-      params: { subsystem, collection, page, pageSize, sortBy }
+      params: { from, to, page, pageSize, sortBy }
     })
   },
 
-  searchStatements: (query, subsystem = 'DB2', collection = 'XDB2I') => {
+  searchStatements: ({ query, from, to, page = 1, pageSize = 50 } = {}) => {
     return apiClient.get('/dashboard/search-statements', {
-      params: { query, subsystem, collection }
+      params: { query, from, to, page, pageSize }
     })
   },
 }
 
 // API Endpoints for Package Analyzer
 export const packageAPI = {
-  getPackage: (packageId, subsystem = 'DB2', collection = 'XDB2I') => {
-    return apiClient.get(`/packages/${packageId}`, {
-      params: { subsystem, collection }
-    })
+  getPackage: (packageId) => {
+    return apiClient.get(`/packages/${packageId}`)
   },
 
-  listPackages: (subsystem = 'DB2', collection = 'XDB2I', page = 1, pageSize = 50) => {
+  listPackages: ({ page = 1, pageSize = 50, search = '' } = {}) => {
     return apiClient.get('/packages', {
-      params: { subsystem, collection, page, pageSize }
+      params: { page, pageSize, search }
     })
   },
 
-  getPackagePerformanceTrend: (packageId, timeRange = '24h') => {
+  getPackagePerformanceTrend: (packageId, { from, to } = {}) => {
     return apiClient.get(`/packages/${packageId}/trend`, {
-      params: { timeRange }
+      params: { from, to }
     })
   },
 
-  getBindingHistory: (packageId, subsystem = 'DB2', collection = 'XDB2I') => {
-    return apiClient.get(`/packages/${packageId}/bindings`, {
-      params: { subsystem, collection }
-    })
+  getBindingHistory: (packageId) => {
+    return apiClient.get(`/packages/${packageId}/bindings`)
   },
 
   getPackageStatements: (
     packageId,
-    page = 1,
-    pageSize = 50,
-    sortBy = 'getPages'
+    { page = 1, pageSize = 50, sortBy = 'getPages', search = '', from, to } = {}
   ) => {
     return apiClient.get(`/packages/${packageId}/statements`, {
-      params: { page, pageSize, sortBy }
+      params: { page, pageSize, sortBy, search, from, to }
     })
   },
 
@@ -100,15 +94,15 @@ export const statementAPI = {
     return apiClient.get(`/statements/${statementId}`)
   },
 
-  getStatementMetrics: (statementId, timeRange = '24h') => {
+  getStatementMetrics: (statementId, { from, to } = {}) => {
     return apiClient.get(`/statements/${statementId}/metrics`, {
-      params: { timeRange }
+      params: { from, to }
     })
   },
 
-  getStatementTrend: (statementId, timeRange = '24h') => {
+  getStatementTrend: (statementId, { from, to } = {}) => {
     return apiClient.get(`/statements/${statementId}/trend`, {
-      params: { timeRange }
+      params: { from, to }
     })
   },
 
@@ -123,15 +117,21 @@ export const statementAPI = {
 
 // API Endpoints for Access Path Viewer
 export const explainAPI = {
-  getCurrentExplain: (statementId, contoken) => {
+  getCurrentExplain: ({ statementId, contoken, from, to }) => {
     return apiClient.get(`/explain/current`, {
-      params: { statementId, contoken }
+      params: { statementId, contoken, from, to }
     })
   },
 
-  getPreviousExplain: (statementId) => {
+  getPreviousExplain: ({ statementId, from, to }) => {
     return apiClient.get(`/explain/previous`, {
-      params: { statementId }
+      params: { statementId, from, to }
+    })
+  },
+
+  listStatements: ({ from, to, page = 1, pageSize = 100 } = {}) => {
+    return apiClient.get('/explain/statements', {
+      params: { from, to, page, pageSize }
     })
   },
 
@@ -142,9 +142,9 @@ export const explainAPI = {
     })
   },
 
-  compareExplainPlans: (currentId, previousId) => {
+  compareExplainPlans: ({ currentId, previousId, statementId, from, to }) => {
     return apiClient.get('/explain/compare', {
-      params: { currentId, previousId }
+      params: { currentId, previousId, statementId, from, to }
     })
   },
 }
@@ -159,10 +159,8 @@ export const configAPI = {
     return apiClient.put('/config/settings', settings)
   },
 
-  getAvailableCollections: (subsystem = 'DB2') => {
-    return apiClient.get('/config/collections', {
-      params: { subsystem }
-    })
+  getAvailableCollections: () => {
+    return apiClient.get('/config/collections')
   },
 
   getAvailableSubsystems: () => {

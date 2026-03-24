@@ -1,24 +1,41 @@
 import { useState, useEffect } from 'react'
 import { CheckIcon } from '../utils/icons'
+import StatusBanner from '../components/StatusBanner'
+import { configAPI } from '../services/api'
 
 export default function Settings() {
   const [settings, setSettings] = useState({
-    subsystem: 'DB2',
-    collection: 'XDB2I',
-    defaultTimeRange: '24h',
+    defaultIntervalHours: 24,
     statsWarningThreshold: 30,
     itemsPerPage: 50,
     chartRefreshInterval: 60,
   })
 
   const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  // Load settings from localStorage
+  // Load settings from backend
   useEffect(() => {
-    const savedSettings = localStorage.getItem('db2VizSettings')
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings))
+    const loadSettings = async () => {
+      setLoading(true)
+      setError('')
+
+      try {
+        const response = await configAPI.getSettings()
+        const payload = response.data?.data ?? response.data ?? {}
+        setSettings((prev) => ({
+          ...prev,
+          ...payload,
+        }))
+      } catch (err) {
+        setError(err?.response?.data?.message || 'Failed to load settings')
+      } finally {
+        setLoading(false)
+      }
     }
+
+    loadSettings()
   }, [])
 
   const handleInputChange = (field, value) => {
@@ -29,17 +46,20 @@ export default function Settings() {
     setSaved(false)
   }
 
-  const handleSave = () => {
-    localStorage.setItem('db2VizSettings', JSON.stringify(settings))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+  const handleSave = async () => {
+    setError('')
+    try {
+      await configAPI.updateSettings(settings)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to save settings')
+    }
   }
 
   const handleReset = () => {
     setSettings({
-      subsystem: 'DB2',
-      collection: 'XDB2I',
-      defaultTimeRange: '24h',
+      defaultIntervalHours: 24,
       statsWarningThreshold: 30,
       itemsPerPage: 50,
       chartRefreshInterval: 60,
@@ -50,6 +70,10 @@ export default function Settings() {
   return (
     <div className="p-6 max-w-4xl">
       <div className="space-y-6">
+        {loading && <StatusBanner type="info" message="Loading settings..." />}
+
+        <StatusBanner type="error" message={error} />
+
         {/* Header */}
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Application Settings</h2>
@@ -66,7 +90,7 @@ export default function Settings() {
 
         {/* Database Settings */}
         <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">Database Connection</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-6">Database Context</h3>
 
           <div className="space-y-6">
             <div>
@@ -75,26 +99,24 @@ export default function Settings() {
               </label>
               <input
                 type="text"
-                value={settings.subsystem}
-                onChange={(e) => handleInputChange('subsystem', e.target.value)}
+                value="DB2"
+                readOnly
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., DB2"
               />
-              <p className="text-xs text-gray-600 mt-1">The DB2 subsystem identifier</p>
+              <p className="text-xs text-gray-600 mt-1">Fixed for this environment and managed by backend</p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Default Collection
+                Collection
               </label>
               <input
                 type="text"
-                value={settings.collection}
-                onChange={(e) => handleInputChange('collection', e.target.value)}
+                value="XDB2I"
+                readOnly
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., XDB2I"
               />
-              <p className="text-xs text-gray-600 mt-1">The default collection to analyze</p>
+              <p className="text-xs text-gray-600 mt-1">Fixed for this environment and managed by backend</p>
             </div>
           </div>
         </div>
@@ -106,19 +128,18 @@ export default function Settings() {
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Default Time Range
+                Default Interval Window (hours)
               </label>
-              <select
-                value={settings.defaultTimeRange}
-                onChange={(e) => handleInputChange('defaultTimeRange', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="24h">Last 24 Hours</option>
-                <option value="7d">Last 7 Days</option>
-                <option value="30d">Last 30 Days</option>
-                <option value="custom">Custom Range</option>
-              </select>
-              <p className="text-xs text-gray-600 mt-1">Default time range for dashboard view</p>
+              <input
+                type="number"
+                value={settings.defaultIntervalHours}
+                onChange={(e) => handleInputChange('defaultIntervalHours', parseInt(e.target.value, 10))}
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min="1"
+                max="720"
+                step="1"
+              />
+              <p className="text-xs text-gray-600 mt-1">Used to build the default from/to interval</p>
             </div>
 
             <div>
@@ -236,8 +257,7 @@ export default function Settings() {
         {/* Info */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-blue-800 text-sm">
           <p>
-            <strong>Note:</strong> Settings are saved locally in your browser. Backend endpoints for settings
-            persistence will be configured once backend is ready.
+            <strong>Note:</strong> Dashboard and analyzer data now use explicit from/to intervals.
           </p>
         </div>
       </div>

@@ -4,35 +4,134 @@ import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Bar
 } from 'recharts'
-import { generateMockDashboardData, generateMockTableStatistics } from '../services/mockDataService'
+import TimeRangePicker from '../components/TimeRangePicker'
+import StatusBanner from '../components/StatusBanner'
+import { statementAPI } from '../services/api'
 import { WarningIcon, ChevronDownIcon, ChevronRightIcon, ArrowLeftIcon, ArrowRightIcon } from '../utils/icons'
+import { getIntervalFromNow } from '../utils/timeInterval'
+
+const EMPTY_STATEMENT = {
+  id: null,
+  sqlText: 'No SQL text available',
+  program: 'N/A',
+  collection: 'XDB2I',
+  textToken: 'N/A',
+  contoken: 'N/A',
+}
+
+const EMPTY_METRICS = {
+  executionCount: 0,
+  avgCpu: 0,
+  avgElapsed: 0,
+}
 
 export default function StatementAnalyzer() {
   const { statementId } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const statement = location.state?.statement
+  const [statement, setStatement] = useState(location.state?.statement || { ...EMPTY_STATEMENT, id: statementId })
   const [trendData, setTrendData] = useState([])
   const [tableStats, setTableStats] = useState([])
+  const [metrics, setMetrics] = useState(EMPTY_METRICS)
+  const [interval, setInterval] = useState(getIntervalFromNow({ hours: 24 }))
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [expandedTables, setExpandedTables] = useState({})
 
   useEffect(() => {
-    setTrendData(generateMockDashboardData())
-    setTableStats(generateMockTableStatistics())
-  }, [statementId])
+    const loadStatementData = async () => {
+      setLoading(true)
+      setError('')
 
-  if (!statement) {
-    return (
-      <div className="p-6 text-center">
-        <p className="text-gray-600 mb-4">No statement data available</p>
-        <button
-          onClick={() => navigate('/')}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          ← Back to Dashboard
-        </button>
-      </div>
-    )
+      try {
+        const [statementRes, metricsRes, trendRes, tablesRes] = await Promise.all([
+          statementAPI.getStatement(statementId),
+          statementAPI.getStatementMetrics(statementId, interval),
+          statementAPI.getStatementTrend(statementId, interval),
+          statementAPI.getReferencedTables(statementId),
+        ])
+
+        const statementPayload = statementRes.data?.data ?? statementRes.data ?? {}
+        const metricsPayload = metricsRes.data?.data ?? metricsRes.data ?? {}
+        const trendPayload = trendRes.data?.data ?? trendRes.data ?? []
+        const tablesPayload = tablesRes.data?.data ?? tablesRes.data ?? []
+
+        setStatement({
+          ...statementPayload,
+          id: statementPayload.id ?? statementPayload.statementId ?? statementId,
+          sqlText: statementPayload.sqlText ?? statementPayload.text ?? location.state?.statement?.sqlText ?? '',
+          program: statementPayload.program ?? statementPayload.programName ?? 'N/A',
+          collection: statementPayload.collection ?? 'XDB2I',
+          textToken: statementPayload.textToken ?? statementPayload.text_token ?? 'N/A',
+          contoken: statementPayload.contoken ?? statementPayload.conToken ?? 'N/A',
+        })
+
+        setMetrics({
+          executionCount: Number(metricsPayload.executionCount ?? metricsPayload.execCount ?? 0),
+          avgCpu: Number(metricsPayload.avgCpu ?? metricsPayload.averageCpu ?? 0),
+          avgElapsed: Number(metricsPayload.avgElapsed ?? metricsPayload.averageElapsed ?? 0),
+        })
+
+        const normalizedTrend = Array.isArray(trendPayload)
+          ? trendPayload.map((point, idx) => ({
+              ...point,
+              time:
+                point.time ||
+                new Date(point.timestamp || point.bucketTime || Date.now() - (idx * 60 * 60 * 1000)).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+              cpu: Number(point.cpu ?? point.totalCpu ?? 0),
+              getPages: Number(point.getPages ?? point.totalGetPages ?? 0),
+            }))
+          : []
+        setTrendData(normalizedTrend)
+
+        const tableNames = Array.isArray(tablesPayload)
+          ? tablesPayload.map((table) => table.tableName || table.name).filter(Boolean)
+          : []
+
+        const tableDetails = await Promise.all(
+          tableNames.map(async (tableName) => {
+            try {
+              const tableRes = await statementAPI.getTableStatistics(tableName)
+              const tableData = tableRes.data?.data ?? tableRes.data ?? {}
+              return {
+                tableName: tableData.tableName ?? tableName,
+                tableId: tableData.tableId ?? tableData.id ?? tableName,
+                cardinalityEstimate: Number(tableData.cardinalityEstimate ?? tableData.cardinality ?? 0),
+                lastStatsTime: tableData.lastStatsTime ?? tableData.lastStatisticsAt,
+                columns: Array.isArray(tableData.columns) ? tableData.columns : [],
+              }
+            } catch {
+              return {
+                tableName,
+                tableId: tableName,
+                cardinalityEstimate: 0,
+                lastStatsTime: new Date().toISOString(),
+                columns: [],
+              }
+            }
+          })
+        )
+
+        setTableStats(tableDetails)
+      } catch (err) {
+        setError(err?.response?.data?.message || 'Failed to load statement analysis data')
+        setStatement({ ...EMPTY_STATEMENT, id: statementId })
+        setMetrics(EMPTY_METRICS)
+        setTrendData([])
+        setTableStats([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadStatementData()
+  }, [statementId, interval, location.state])
+
+  const handleIntervalChange = ({ from, to }) => {
+    setInterval({ from, to })
   }
 
   const toggleTableExpand = (tableName) => {
@@ -51,6 +150,11 @@ export default function StatementAnalyzer() {
 
   return (
     <div className="p-6 space-y-6">
+      {loading && <StatusBanner type="info" message="Loading statement analysis..." />}
+      <StatusBanner type="error" message={error} />
+
+      <TimeRangePicker onRangeChange={handleIntervalChange} defaultInterval={interval} />
+
       {/* Breadcrumb */}
       <div className="flex items-center space-x-2 text-sm text-gray-600">
         <button
@@ -95,15 +199,15 @@ export default function StatementAnalyzer() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <h3 className="text-sm font-medium text-gray-600 mb-4">Execution Count</h3>
-          <p className="text-3xl font-bold text-gray-900">{statement.executionCount.toLocaleString()}</p>
+          <p className="text-3xl font-bold text-gray-900">{metrics.executionCount.toLocaleString()}</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <h3 className="text-sm font-medium text-gray-600 mb-4">Avg CPU (ms)</h3>
-          <p className="text-3xl font-bold text-red-600">{statement.avgCpu.toLocaleString()}</p>
+          <p className="text-3xl font-bold text-red-600">{metrics.avgCpu.toLocaleString()}</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <h3 className="text-sm font-medium text-gray-600 mb-4">Avg Elapsed (ms)</h3>
-          <p className="text-3xl font-bold text-blue-600">{statement.avgElapsed.toLocaleString()}</p>
+          <p className="text-3xl font-bold text-blue-600">{metrics.avgElapsed.toLocaleString()}</p>
         </div>
       </div>
 
@@ -141,6 +245,10 @@ export default function StatementAnalyzer() {
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">Referenced Tables & Statistics</h3>
         </div>
+
+        {tableStats.length === 0 && (
+          <div className="p-6 text-sm text-gray-500">No referenced table statistics available.</div>
+        )}
 
         <div className="divide-y divide-gray-200">
           {tableStats.map((table) => {

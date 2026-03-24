@@ -1,28 +1,119 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { generateMockExplainData } from '../services/mockDataService'
+import TimeRangePicker from '../components/TimeRangePicker'
+import StatusBanner from '../components/StatusBanner'
+import { explainAPI } from '../services/api'
 import { CheckIcon, WarningIcon, ArrowDownIcon, ArrowUpIcon, ArrowLeftIcon } from '../utils/icons'
+import { getIntervalFromNow } from '../utils/timeInterval'
+
+const EMPTY_PLAN = {
+  statementId: null,
+  accessMethod: 'N/A',
+  indexName: null,
+  estimatedRows: 0,
+  estimatedCost: 0,
+  filterFactor: 0,
+  plansteps: [],
+}
 
 export default function AccessPathViewer() {
   const navigate = useNavigate()
-  const [explainData, setExplainData] = useState(null)
-  const [selectedStatement, setSelectedStatement] = useState(1)
+  const [explainData, setExplainData] = useState({ current: EMPTY_PLAN, previous: EMPTY_PLAN })
+  const [statementOptions, setStatementOptions] = useState([])
+  const [selectedStatement, setSelectedStatement] = useState('')
+  const [interval, setInterval] = useState(getIntervalFromNow({ hours: 24 }))
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const data = generateMockExplainData()
-    setExplainData(data)
-  }, [])
+    const loadStatementOptions = async () => {
+      setLoading(true)
+      setError('')
 
-  if (!explainData) return <div className="p-6">Loading...</div>
+      try {
+        const statementsRes = await explainAPI.listStatements({ ...interval, page: 1, pageSize: 200 })
+        const statementsPayload =
+          statementsRes.data?.items ??
+          statementsRes.data?.data?.items ??
+          statementsRes.data?.data ??
+          statementsRes.data ??
+          []
+
+        const options = Array.isArray(statementsPayload)
+          ? statementsPayload.map((stmt, idx) => ({
+              id: stmt.id ?? stmt.statementId ?? idx + 1,
+              label: stmt.sqlText ?? stmt.text ?? `Statement ${idx + 1}`,
+              contoken: stmt.contoken ?? stmt.conToken,
+            }))
+          : []
+
+        setStatementOptions(options)
+
+        if (options.length > 0 && !selectedStatement) {
+          setSelectedStatement(String(options[0].id))
+        }
+      } catch (err) {
+        setError(err?.response?.data?.message || 'Failed to load statements for explain analysis')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadStatementOptions()
+  }, [interval, selectedStatement])
+
+  useEffect(() => {
+    if (!selectedStatement) return
+
+    const loadExplainData = async () => {
+      setLoading(true)
+      setError('')
+
+      try {
+        const selected = statementOptions.find((stmt) => String(stmt.id) === String(selectedStatement))
+        const [currentRes, previousRes] = await Promise.all([
+          explainAPI.getCurrentExplain({
+            statementId: selectedStatement,
+            contoken: selected?.contoken,
+            ...interval,
+          }),
+          explainAPI.getPreviousExplain({ statementId: selectedStatement, ...interval }),
+        ])
+
+        const current = currentRes.data?.data ?? currentRes.data ?? null
+        const previous = previousRes.data?.data ?? previousRes.data ?? null
+
+        setExplainData({ current, previous })
+      } catch (err) {
+        setError(err?.response?.data?.message || 'Failed to load explain plans')
+        setExplainData({ current: EMPTY_PLAN, previous: EMPTY_PLAN })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadExplainData()
+  }, [selectedStatement, interval, statementOptions])
+
+  const handleIntervalChange = ({ from, to }) => {
+    setInterval({ from, to })
+  }
 
   const { current, previous } = explainData
 
-  const costImprovement = (
-    ((previous.estimatedCost - current.estimatedCost) / previous.estimatedCost) * 100
-  ).toFixed(1)
+  const previousCost = Number(previous.estimatedCost ?? 0)
+  const currentCost = Number(current.estimatedCost ?? 0)
+  const costImprovement = previousCost > 0
+    ? (((previousCost - currentCost) / previousCost) * 100).toFixed(1)
+    : '0.0'
 
   return (
     <div className="p-6 space-y-6">
+      {loading && <StatusBanner type="info" message="Loading access path analysis..." />}
+      <StatusBanner type="error" message={error} />
+
+      <TimeRangePicker onRangeChange={handleIntervalChange} defaultInterval={interval} />
+
       {/* Breadcrumb */}
       <div className="flex items-center space-x-2 text-sm text-gray-600">
         <button
@@ -42,12 +133,19 @@ export default function AccessPathViewer() {
         </label>
         <select
           value={selectedStatement}
-          onChange={(e) => setSelectedStatement(parseInt(e.target.value))}
+          onChange={(e) => setSelectedStatement(e.target.value)}
           className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value={1}>Statement 1 - SELECT from TABLE_USERS</option>
-          <option value={2}>Statement 2 - JOIN Query</option>
-          <option value={3}>Statement 3 - Complex Aggregation</option>
+          {statementOptions.length === 0 && (
+            <option value="" disabled>
+              No statements available
+            </option>
+          )}
+          {statementOptions.map((stmt) => (
+            <option key={stmt.id} value={stmt.id}>
+              Statement {stmt.id} - {stmt.label.slice(0, 60)}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -136,6 +234,9 @@ export default function AccessPathViewer() {
                     </div>
                   </div>
                 ))}
+                {current.plansteps.length === 0 && (
+                  <div className="text-sm text-gray-500">No current plan steps available.</div>
+                )}
               </div>
             </div>
           </div>
@@ -197,6 +298,9 @@ export default function AccessPathViewer() {
                     </div>
                   </div>
                 ))}
+                {previous.plansteps.length === 0 && (
+                  <div className="text-sm text-gray-500">No previous plan steps available.</div>
+                )}
               </div>
             </div>
           </div>

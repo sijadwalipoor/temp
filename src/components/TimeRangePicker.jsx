@@ -1,20 +1,40 @@
 import { useState } from 'react'
+import {
+  fromApiDateTimeToInput,
+  fromInputToApiDateTime,
+  getIntervalForPreset,
+} from '../utils/timeInterval'
 
-export default function TimeRangePicker({ onRangeChange, defaultRange = '24h' }) {
-  const [selectedRange, setSelectedRange] = useState(defaultRange)
-  const [customStartDate, setCustomStartDate] = useState('')
-  const [customEndDate, setCustomEndDate] = useState('')
+export default function TimeRangePicker({
+  onRangeChange,
+  defaultPreset = 'last24Hours',
+  defaultInterval,
+}) {
+  const initialInterval = defaultInterval || getIntervalForPreset(defaultPreset)
+
+  const [selectedPreset, setSelectedPreset] = useState(defaultPreset)
+  const [customStartDate, setCustomStartDate] = useState(fromApiDateTimeToInput(initialInterval.from))
+  const [customEndDate, setCustomEndDate] = useState(fromApiDateTimeToInput(initialInterval.to))
   const [showCustom, setShowCustom] = useState(false)
 
-  const handleRangeChange = (range) => {
-    setSelectedRange(range)
+  const handlePresetChange = (preset) => {
+    const interval = getIntervalForPreset(preset)
+    setSelectedPreset(preset)
+    setCustomStartDate(fromApiDateTimeToInput(interval.from))
+    setCustomEndDate(fromApiDateTimeToInput(interval.to))
     setShowCustom(false)
-    onRangeChange(range, null, null)
+    onRangeChange({ from: interval.from, to: interval.to, preset })
   }
 
   const handleCustomDateSubmit = () => {
     if (customStartDate && customEndDate) {
-      onRangeChange('custom', customStartDate, customEndDate)
+      const from = fromInputToApiDateTime(customStartDate)
+      const to = fromInputToApiDateTime(customEndDate)
+
+      if (from > to) return
+
+      setSelectedPreset('custom')
+      onRangeChange({ from, to, preset: 'custom' })
     }
   }
 
@@ -25,9 +45,9 @@ export default function TimeRangePicker({ onRangeChange, defaultRange = '24h' })
         
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => handleRangeChange('24h')}
+            onClick={() => handlePresetChange('last24Hours')}
             className={`px-4 py-2 rounded font-medium text-sm transition-all ${
-              selectedRange === '24h'
+              selectedPreset === 'last24Hours'
                 ? 'bg-primary text-white shadow-md'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
             }`}
@@ -36,9 +56,9 @@ export default function TimeRangePicker({ onRangeChange, defaultRange = '24h' })
           </button>
           
           <button
-            onClick={() => handleRangeChange('7d')}
+            onClick={() => handlePresetChange('last7Days')}
             className={`px-4 py-2 rounded font-medium text-sm transition-all ${
-              selectedRange === '7d'
+              selectedPreset === 'last7Days'
                 ? 'bg-primary text-white shadow-md'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
             }`}
@@ -62,14 +82,16 @@ export default function TimeRangePicker({ onRangeChange, defaultRange = '24h' })
       {showCustom && (
         <div className="flex gap-2 p-4 bg-gray-50 rounded border border-gray-300">
           <input
-            type="date"
+            type="datetime-local"
+            step="1"
             value={customStartDate}
             onChange={(e) => setCustomStartDate(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary focus:border-primary"
           />
           <span className="text-gray-500 font-medium self-center">to</span>
           <input
-            type="date"
+            type="datetime-local"
+            step="1"
             value={customEndDate}
             onChange={(e) => setCustomEndDate(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary focus:border-primary"

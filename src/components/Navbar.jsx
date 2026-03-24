@@ -1,6 +1,10 @@
 import { useLocation } from 'react-router-dom'
 import { LogoutIcon, UserIcon } from '../utils/icons'
 
+const ENVIRONMENT = process.env.REACT_APP_ENVIRONMENT || 'DEV'
+const SUBSYSTEM = process.env.REACT_APP_SUBSYSTEM || 'DB2'
+const COLLECTION = process.env.REACT_APP_COLLECTION || 'XDB2I'
+
 export default function Navbar() {
   const location = useLocation()
   
@@ -8,6 +12,7 @@ export default function Navbar() {
     const titles = {
       '/': 'Dashboard',
       '/package-analyzer': 'Package Analyzer',
+      '/watch-list': 'Watch List',
       '/statement': 'Statement Analysis',
       '/access-path': 'Access Path Viewer',
       '/settings': 'Settings',
@@ -26,6 +31,18 @@ export default function Navbar() {
         </div>
         
         <div className="flex items-center space-x-6">
+          <div className="hidden xl:flex items-center gap-2">
+            <span className="px-2 py-1 text-xs font-semibold rounded border border-gray-300 bg-gray-50 text-gray-700">
+              ENV: {ENVIRONMENT}
+            </span>
+            <span className="px-2 py-1 text-xs font-semibold rounded border border-gray-300 bg-gray-50 text-gray-700">
+              SUBSYSTEM: {SUBSYSTEM}
+            </span>
+            <span className="px-2 py-1 text-xs font-semibold rounded border border-gray-300 bg-gray-50 text-gray-700">
+              COLLECTION: {COLLECTION}
+            </span>
+          </div>
+
           <div className="text-sm text-gray-600 flex items-center space-x-2">
             <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
               <UserIcon size={16} className="text-gray-600" />

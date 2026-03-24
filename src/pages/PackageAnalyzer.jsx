@@ -1,43 +1,192 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer
 } from 'recharts'
-import { generateMockPackageData } from '../services/mockDataService'
 import FilterBar from '../components/FilterBar'
 import Paginator from '../components/Paginator'
+import TimeRangePicker from '../components/TimeRangePicker'
+import StatusBanner from '../components/StatusBanner'
+import { packageAPI } from '../services/api'
 import { CheckIcon } from '../utils/icons'
+import { getIntervalFromNow } from '../utils/timeInterval'
+
+const EMPTY_PACKAGE_DATA = {
+  id: null,
+  name: 'N/A',
+  program: 'N/A',
+  collection: 'XDB2I',
+  binds: [],
+  statements: [],
+  trends: [],
+}
 
 export default function PackageAnalyzer() {
   const navigate = useNavigate()
-  const [packageData, setPackageData] = useState(null)
+  const location = useLocation()
+  const [packageData, setPackageData] = useState(EMPTY_PACKAGE_DATA)
+  const [packageOptions, setPackageOptions] = useState([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedPackageId, setSelectedPackageId] = useState(null)
+  const [interval, setInterval] = useState(getIntervalFromNow({ hours: 24 }))
+  const [rawStatements, setRawStatements] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [packageSearchLoading, setPackageSearchLoading] = useState(false)
+  const [error, setError] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [filteredStatements, setFilteredStatements] = useState([])
   const itemsPerPage = 50
 
   useEffect(() => {
-    // Load initial package (demo: package 1)
-    const pkg = generateMockPackageData(1)
-    setPackageData(pkg)
-    setFilteredStatements(pkg.statements)
-  }, [])
+    const initialPackageId = Number(location.state?.packageId) || null
+    if (!initialPackageId) return
 
-  const handlePackageChange = (e) => {
-    const packageId = parseInt(e.target.value)
-    const pkg = generateMockPackageData(packageId)
-    setPackageData(pkg)
-    setFilteredStatements(pkg.statements)
+    const loadInitialPackage = async () => {
+      setPackageSearchLoading(true)
+      try {
+        const packageRes = await packageAPI.getPackage(initialPackageId)
+        const payload = packageRes.data?.data ?? packageRes.data ?? {}
+        const normalized = {
+          id: payload.id ?? payload.packageId ?? initialPackageId,
+          name: payload.name ?? payload.packageName ?? `PACKAGE_${initialPackageId}`,
+          program: payload.program ?? payload.programName ?? 'N/A',
+        }
+        setPackageOptions([normalized])
+        setSelectedPackageId(Number(normalized.id))
+        setSearchQuery(normalized.name)
+      } catch {
+        setSelectedPackageId(initialPackageId)
+      } finally {
+        setPackageSearchLoading(false)
+      }
+    }
+
+    loadInitialPackage()
+  }, [location.state])
+
+  useEffect(() => {
+    const handler = setTimeout(async () => {
+      setPackageSearchLoading(true)
+
+      try {
+        const packageListRes = await packageAPI.listPackages({
+          page: 1,
+          pageSize: 25,
+          search: searchQuery.trim(),
+        })
+
+        const packageList =
+          packageListRes.data?.items ??
+          packageListRes.data?.data?.items ??
+          packageListRes.data?.data ??
+          packageListRes.data ??
+          []
+
+        const normalizedOptions = Array.isArray(packageList)
+          ? packageList.map((pkg, idx) => ({
+              id: pkg.id ?? pkg.packageId ?? idx + 1,
+              name: pkg.name ?? pkg.packageName ?? `PACKAGE_${idx + 1}`,
+              program: pkg.program ?? pkg.programName ?? 'N/A',
+            }))
+          : []
+
+        setPackageOptions(normalizedOptions)
+      } catch {
+        setPackageOptions([])
+      } finally {
+        setPackageSearchLoading(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(handler)
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (!selectedPackageId) return
+
+    const loadPackageData = async () => {
+      setLoading(true)
+      setError('')
+
+      try {
+        const [packageRes, bindingsRes, trendRes, statementsRes] = await Promise.all([
+          packageAPI.getPackage(selectedPackageId),
+          packageAPI.getBindingHistory(selectedPackageId),
+          packageAPI.getPackagePerformanceTrend(selectedPackageId, interval),
+          packageAPI.getPackageStatements(selectedPackageId, {
+            page: 1,
+            pageSize: 500,
+            sortBy: 'getPages',
+            ...interval,
+          }),
+        ])
+
+        const packagePayload = packageRes.data?.data ?? packageRes.data ?? {}
+        const bindingsPayload = bindingsRes.data?.data ?? bindingsRes.data ?? []
+        const trendPayload = trendRes.data?.data ?? trendRes.data ?? []
+        const statementsPayload =
+          statementsRes.data?.items ??
+          statementsRes.data?.data?.items ??
+          statementsRes.data?.data ??
+          statementsRes.data ??
+          []
+
+        const normalizedStatements = Array.isArray(statementsPayload)
+          ? statementsPayload.map((stmt, idx) => ({
+              ...stmt,
+              id: stmt.id ?? stmt.statementId ?? idx + 1,
+              sqlText: stmt.sqlText ?? stmt.text ?? 'N/A',
+              executionCount: Number(stmt.executionCount ?? stmt.execCount ?? 0),
+              totalCpu: Number(stmt.totalCpu ?? stmt.cpu ?? 0),
+              totalElapsed: Number(stmt.totalElapsed ?? stmt.elapsed ?? 0),
+              totalGetPages: Number(stmt.totalGetPages ?? stmt.getPages ?? 0),
+            }))
+          : []
+
+        setRawStatements(normalizedStatements)
+        setFilteredStatements(normalizedStatements)
+
+        setPackageData({
+          id: packagePayload.id ?? packagePayload.packageId ?? selectedPackageId,
+          name: packagePayload.name ?? packagePayload.packageName ?? `PACKAGE_${selectedPackageId}`,
+          program: packagePayload.program ?? packagePayload.programName ?? 'N/A',
+          collection: packagePayload.collection ?? 'XDB2I',
+          binds: Array.isArray(bindingsPayload) ? bindingsPayload : [],
+          statements: normalizedStatements,
+          trends: Array.isArray(trendPayload) ? trendPayload : [],
+        })
+      } catch (err) {
+        setError(err?.response?.data?.message || 'Failed to load package details')
+        setPackageData(EMPTY_PACKAGE_DATA)
+        setRawStatements([])
+        setFilteredStatements([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadPackageData()
+  }, [selectedPackageId, interval])
+
+  const handlePackageSelect = (pkg) => {
+    setSelectedPackageId(Number(pkg.id))
+    setSearchQuery(pkg.name)
+    setCurrentPage(1)
+  }
+
+  const handleIntervalChange = ({ from, to }) => {
+    setInterval({ from, to })
     setCurrentPage(1)
   }
 
   const handleFilterChange = ({ search, sort }) => {
     if (!packageData) return
 
-    let filtered = packageData.statements
+    let filtered = [...rawStatements]
 
     if (search) {
-      filtered = filtered.filter(stmt =>
+      filtered = filtered.filter((stmt) =>
         stmt.sqlText.toLowerCase().includes(search.toLowerCase())
       )
     }
@@ -59,27 +208,56 @@ export default function PackageAnalyzer() {
     currentPage * itemsPerPage
   )
 
-  if (!packageData) return <div className="p-6">Loading...</div>
-
   return (
     <div className="p-6 space-y-6">
+      {loading && <StatusBanner type="info" message="Loading package analysis..." />}
+      <StatusBanner type="error" message={error} />
+
       {/* Package Selector */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <label className="block text-sm font-medium text-gray-700 mb-3">
-          Select Package:
+          Search Package:
         </label>
-        <select
-          value={packageData.id}
-          onChange={handlePackageChange}
-          className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {Array.from({ length: 10 }, (_, i) => (
-            <option key={i + 1} value={i + 1}>
-              Package {i + 1} - {packageData.program}
-            </option>
-          ))}
-        </select>
+        <div className="max-w-2xl">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Type package name or ID..."
+            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+
+          <div className="mt-2 border border-gray-200 rounded-md bg-white max-h-64 overflow-y-auto">
+            {packageSearchLoading && (
+              <div className="px-4 py-3 text-sm text-gray-500">Searching packages...</div>
+            )}
+
+            {!packageSearchLoading && packageOptions.length === 0 && (
+              <div className="px-4 py-3 text-sm text-gray-500">No packages found.</div>
+            )}
+
+            {!packageSearchLoading && packageOptions.map((pkg) => {
+              const isSelected = Number(pkg.id) === Number(selectedPackageId)
+              return (
+                <button
+                  key={pkg.id}
+                  type="button"
+                  onClick={() => handlePackageSelect(pkg)}
+                  className={`w-full text-left px-4 py-3 border-b last:border-b-0 transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-900">{pkg.name}</span>
+                    <span className="text-xs text-gray-500">ID: {pkg.id}</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Program: {pkg.program}</p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
+
+      <TimeRangePicker onRangeChange={handleIntervalChange} defaultInterval={interval} />
 
       {/* Package Details */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -101,6 +279,9 @@ export default function PackageAnalyzer() {
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Binding History (Last 3 Binds)</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {packageData.binds.length === 0 && (
+            <div className="md:col-span-3 text-sm text-gray-500">No binding history available.</div>
+          )}
           {packageData.binds.map((bind, idx) => (
             <div key={idx} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
               <div className="flex justify-between items-start mb-3">
@@ -208,6 +389,14 @@ export default function PackageAnalyzer() {
                   </td>
                 </tr>
               ))}
+
+              {paginatedStatements.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+                    No statements available for the selected package and interval.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

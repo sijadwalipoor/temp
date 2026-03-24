@@ -4,7 +4,8 @@ export default function Paginator({
   currentPage = 1, 
   totalItems = 0, 
   itemsPerPage = 50, 
-  onPageChange 
+  onPageChange,
+  embedded = false,
 }) {
   const totalPages = Math.ceil(totalItems / itemsPerPage)
 
@@ -50,7 +51,7 @@ export default function Paginator({
   if (totalPages <= 1) return null
 
   return (
-    <div className="flex items-center justify-between px-6 py-4 bg-white border-t border-gray-200">
+    <div className={`flex items-center justify-between ${embedded ? 'w-full' : 'px-6 py-4 bg-white border-t border-gray-200'}`}>
       <div className="text-sm text-gray-700 font-medium">
         Page <span className="font-semibold text-gray-900">{currentPage}</span> of{' '}
         <span className="font-semibold text-gray-900">{totalPages}</span>

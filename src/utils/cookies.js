@@ -17,11 +17,11 @@ export const getCookie = (name) => {
   for (let cookie of cookies) {
     cookie = cookie.trim()
     if (cookie.indexOf(nameEQ) === 0) {
+      const rawValue = decodeURIComponent(cookie.substring(nameEQ.length))
       try {
-        const value = decodeURIComponent(cookie.substring(nameEQ.length))
-        return JSON.parse(value)
+        return JSON.parse(rawValue)
       } catch {
-        return value
+        return rawValue
       }
     }
   }
