@@ -98,48 +98,74 @@ export default function Dashboard() {
     }
   }
 
+  const getApiErrorMessage = (result, fallbackMessage) => {
+    if (!result || result.status !== 'rejected') return ''
+    return result.reason?.response?.data?.message || result.reason?.message || fallbackMessage
+  }
+
   useEffect(() => {
     const loadDashboardData = async () => {
       setLoading(true)
       setError('')
 
       try {
-        const [kpiRes, trendRes, packagesRes] = await Promise.all([
+        const [kpiResult, trendResult, packagesResult] = await Promise.allSettled([
           dashboardAPI.getKPIs(interval),
           dashboardAPI.getMetricsTrend(interval),
           dashboardAPI.getWorstPackages({ ...interval, page: 1, pageSize: 500, sortBy: 'cpu' }),
         ])
 
-        const kpiPayload = kpiRes.data?.data ?? kpiRes.data ?? {}
-        const trendPayload = trendRes.data?.data ?? trendRes.data ?? []
-        const packagePayload =
-          packagesRes.data?.items ??
-          packagesRes.data?.data?.items ??
-          packagesRes.data?.data ??
-          packagesRes.data ??
-          []
+        const failedSections = []
 
-        const normalizedTrend = Array.isArray(trendPayload)
-          ? trendPayload.map(normalizeTrendPoint)
-          : []
+        if (kpiResult.status === 'fulfilled') {
+          const kpiPayload = kpiResult.value.data?.data ?? kpiResult.value.data ?? {}
+          setKpis({
+            totalCpu: Number(kpiPayload.totalCpu ?? 0),
+            totalElapsed: Number(kpiPayload.totalElapsed ?? 0),
+            totalGetPages: Number(kpiPayload.totalGetPages ?? 0),
+            totalSqlCalls: Number(kpiPayload.totalSqlCalls ?? 0),
+          })
+        } else {
+          setKpis(EMPTY_KPIS)
+          failedSections.push(getApiErrorMessage(kpiResult, 'KPI data failed to load'))
+        }
 
-        const normalizedPackages = Array.isArray(packagePayload)
-          ? packagePayload.map(normalizePackage)
-          : []
+        if (trendResult.status === 'fulfilled') {
+          const trendPayload = trendResult.value.data?.data ?? trendResult.value.data ?? []
+          const normalizedTrend = Array.isArray(trendPayload)
+            ? trendPayload.map(normalizeTrendPoint)
+            : []
+          setChartData(normalizedTrend)
+        } else {
+          setChartData([])
+          failedSections.push(getApiErrorMessage(trendResult, 'Trend data failed to load'))
+        }
 
-        setKpis({
-          totalCpu: Number(kpiPayload.totalCpu ?? 0),
-          totalElapsed: Number(kpiPayload.totalElapsed ?? 0),
-          totalGetPages: Number(kpiPayload.totalGetPages ?? 0),
-          totalSqlCalls: Number(kpiPayload.totalSqlCalls ?? 0),
-        })
-        setChartData(normalizedTrend)
-        setPackages(normalizedPackages)
+        if (packagesResult.status === 'fulfilled') {
+          const packagePayload =
+            packagesResult.value.data?.items ??
+            packagesResult.value.data?.data?.items ??
+            packagesResult.value.data?.data ??
+            packagesResult.value.data ??
+            []
+
+          const normalizedPackages = Array.isArray(packagePayload)
+            ? packagePayload.map(normalizePackage)
+            : []
+
+          setPackages(normalizedPackages)
+        } else {
+          setPackages([])
+          failedSections.push(getApiErrorMessage(packagesResult, 'Package data failed to load'))
+        }
+
+        if (failedSections.length === 1) {
+          setError(failedSections[0])
+        } else if (failedSections.length > 1) {
+          setError(`Some dashboard sections failed to load: ${failedSections.join(' | ')}`)
+        }
       } catch (err) {
         setError(err?.response?.data?.message || 'Failed to load dashboard data')
-        setKpis(EMPTY_KPIS)
-        setChartData([])
-        setPackages([])
       } finally {
         setLoading(false)
       }
