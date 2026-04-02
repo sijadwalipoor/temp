@@ -10,9 +10,10 @@ import MetricsCard from '../components/MetricsCard'
 import FilterBar from '../components/FilterBar'
 import Paginator from '../components/Paginator'
 import StatusBanner from '../components/StatusBanner'
-import { dashboardAPI } from '../services/api'
 import { CpuIcon, TimerIcon, GetPagesIcon, RefreshIcon } from '../utils/icons'
 import { formatIntervalLabel, getIntervalFromNow } from '../utils/timeInterval'
+import { METRIC_OPTIONS } from './dashboard.utils'
+import { useDashboardData } from '../hooks/useDashboardData'
 import {
   FAVORITE_PACKAGES_STORAGE_KEY,
   REVIEWED_PACKAGES_STORAGE_KEY,
@@ -20,29 +21,12 @@ import {
   writePackageIdSet,
 } from '../utils/packageState'
 
-const EMPTY_KPIS = {
-  totalCpu: 0,
-  totalElapsed: 0,
-  totalGetPages: 0,
-  totalSqlCalls: 0,
-}
-
-const toNumberOrZero = (value) => {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
 export default function Dashboard() {
   const navigate = useNavigate()
   const metricsDropdownRef = useRef(null)
   const [interval, setInterval] = useState(getIntervalFromNow({ hours: 24 }))
   const [selectedMetricKeys, setSelectedMetricKeys] = useState(['cpu', 'elapsed'])
   const [isMetricsMenuOpen, setIsMetricsMenuOpen] = useState(false)
-  const [chartData, setChartData] = useState([])
-  const [packages, setPackages] = useState([])
-  const [kpis, setKpis] = useState(EMPTY_KPIS)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const [refreshCounter, setRefreshCounter] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [filterCriteria, setFilterCriteria] = useState({
@@ -53,145 +37,17 @@ export default function Dashboard() {
   const [favoritePackageIds, setFavoritePackageIds] = useState(() => readPackageIdSet(FAVORITE_PACKAGES_STORAGE_KEY))
   const [itemsPerPage, setItemsPerPage] = useState(25)
 
-  const metricOptions = [
-    { key: 'getPages', label: 'Get Pages', unit: 'pages', color: '#8b5cf6', chartType: 'bar' },
-    { key: 'cpu', label: 'CPU', unit: 'ms', color: '#da1e28', chartType: 'line' },
-    { key: 'elapsed', label: 'Elapsed Time', unit: 'ms', color: '#0043ce', chartType: 'line' },
-    { key: 'sqlCalls', label: 'SQL Calls', unit: 'calls', color: '#f59e0b', chartType: 'line' },
-  ]
+  const { chartData, packages, kpis, loading, error } = useDashboardData(interval, refreshCounter)
 
-  const selectedMetrics = metricOptions.filter((metric) => selectedMetricKeys.includes(metric.key))
+  const selectedMetrics = METRIC_OPTIONS.filter((metric) => selectedMetricKeys.includes(metric.key))
   const selectedMetricsLabel =
     selectedMetrics.length > 2
       ? `${selectedMetrics.slice(0, 2).map((metric) => metric.label).join(', ')}, ...`
       : selectedMetrics.map((metric) => metric.label).join(', ')
-  const areAllMetricsSelected = selectedMetricKeys.length === metricOptions.length
+  const areAllMetricsSelected = selectedMetricKeys.length === METRIC_OPTIONS.length
   const primaryUnit = selectedMetrics[0]?.unit
   const showSecondaryAxis = selectedMetrics.some((metric) => metric.unit !== primaryUnit)
   const intervalLabel = formatIntervalLabel(interval)
-
-  const normalizeTrendPoint = (point, idx) => {
-    const fallbackTime = new Date(Date.now() - (23 - idx) * 60 * 60 * 1000)
-    const timestamp = point.timestamp || point.time || point.bucketTime || fallbackTime.toISOString()
-    const time = point.time || new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
-    return {
-      ...point,
-      time,
-      timestamp,
-      cpu: Number(point.cpu ?? point.totalCpu ?? 0),
-      elapsed: Number(point.elapsed ?? point.totalElapsed ?? 0),
-      getPages: Number(point.getPages ?? point.totalGetPages ?? 0),
-      sqlCalls: Number(point.sqlCalls ?? point.totalSqlCalls ?? 0),
-    }
-  }
-
-  const normalizePackage = (pkg, idx) => {
-    const totalCpu = Number(pkg.totalCpu ?? pkg.cpu ?? 0)
-    const totalSqlCalls = Number(pkg.totalSqlCalls ?? pkg.sqlCalls ?? 0)
-
-    return {
-      ...pkg,
-      id: pkg.id ?? pkg.packageId ?? idx + 1,
-      name: pkg.name ?? pkg.packageName ?? `PACKAGE_${idx + 1}`,
-      program: pkg.program ?? pkg.programName ?? 'N/A',
-      totalCpu,
-      totalSqlCalls,
-      totalElapsed: Number(pkg.totalElapsed ?? pkg.elapsed ?? 0),
-      totalGetPages: Number(pkg.totalGetPages ?? pkg.getPages ?? 0),
-      sqlCallsToCpuRatio: pkg.sqlCallsToCpuRatio ?? (totalCpu > 0 ? (totalSqlCalls / totalCpu).toFixed(2) : '0.00'),
-    }
-  }
-
-  const getApiErrorMessage = (result, fallbackMessage) => {
-    if (!result || result.status !== 'rejected') return ''
-    return result.reason?.response?.data?.message || result.reason?.message || fallbackMessage
-  }
-
-  const extractEnvelopeData = (payload) => {
-    if (!payload || typeof payload !== 'object') return payload
-    if ('data' in payload && payload.data !== undefined && payload.data !== null) {
-      return payload.data
-    }
-    return payload
-  }
-
-  const normalizeKpiPayload = (payload) => {
-    const data = extractEnvelopeData(payload) || {}
-
-    return {
-      totalCpu: toNumberOrZero(data.totalCpu ?? data.totalCPU ?? data.total_cpu ?? data.cpu),
-      totalElapsed: toNumberOrZero(data.totalElapsed ?? data.totalELAPSED ?? data.total_elapsed ?? data.elapsed),
-      totalGetPages: toNumberOrZero(data.totalGetPages ?? data.totalGETPAGES ?? data.total_get_pages ?? data.getPages),
-      totalSqlCalls: toNumberOrZero(data.totalSqlCalls ?? data.totalSQLCalls ?? data.total_sql_calls ?? data.sqlCalls),
-    }
-  }
-
-  useEffect(() => {
-    const loadDashboardData = async () => {
-      setLoading(true)
-      setError('')
-
-      try {
-        const [kpiResult, trendResult, packagesResult] = await Promise.allSettled([
-          dashboardAPI.getKPIs(interval),
-          dashboardAPI.getMetricsTrend(interval),
-          dashboardAPI.getWorstPackages({ ...interval, page: 1, pageSize: 500, sortBy: 'cpu' }),
-        ])
-
-        const failedSections = []
-
-        if (kpiResult.status === 'fulfilled') {
-          const kpiPayload = normalizeKpiPayload(kpiResult.value.data)
-          setKpis(kpiPayload)
-        } else {
-          // Keep the previous successful KPI values when this request fails.
-          failedSections.push(getApiErrorMessage(kpiResult, 'KPI data failed to load'))
-        }
-
-        if (trendResult.status === 'fulfilled') {
-          const trendPayload = trendResult.value.data?.data ?? trendResult.value.data ?? []
-          const normalizedTrend = Array.isArray(trendPayload)
-            ? trendPayload.map(normalizeTrendPoint)
-            : []
-          setChartData(normalizedTrend)
-        } else {
-          setChartData([])
-          failedSections.push(getApiErrorMessage(trendResult, 'Trend data failed to load'))
-        }
-
-        if (packagesResult.status === 'fulfilled') {
-          const packagePayload =
-            packagesResult.value.data?.items ??
-            packagesResult.value.data?.data?.items ??
-            packagesResult.value.data?.data ??
-            packagesResult.value.data ??
-            []
-
-          const normalizedPackages = Array.isArray(packagePayload)
-            ? packagePayload.map(normalizePackage)
-            : []
-
-          setPackages(normalizedPackages)
-        } else {
-          setPackages([])
-          failedSections.push(getApiErrorMessage(packagesResult, 'Package data failed to load'))
-        }
-
-        if (failedSections.length === 1) {
-          setError(failedSections[0])
-        } else if (failedSections.length > 1) {
-          setError(`Some dashboard sections failed to load: ${failedSections.join(' | ')}`)
-        }
-      } catch (err) {
-        setError(err?.response?.data?.message || 'Failed to load dashboard data')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadDashboardData()
-  }, [interval, refreshCounter])
 
   useEffect(() => {
     if (!isMetricsMenuOpen) return undefined
@@ -241,7 +97,7 @@ export default function Dashboard() {
   }
 
   const selectAllMetrics = () => {
-    setSelectedMetricKeys(metricOptions.map((metric) => metric.key))
+    setSelectedMetricKeys(METRIC_OPTIONS.map((metric) => metric.key))
   }
 
   const clearToDefaultMetrics = () => {
@@ -450,7 +306,7 @@ export default function Dashboard() {
 
                     <div className="border-t border-gray-300 my-1" />
 
-                    {metricOptions.map((metric) => (
+                    {METRIC_OPTIONS.map((metric) => (
                       <label key={metric.key} className="flex items-center gap-2 px-2 py-2 text-base text-gray-800 cursor-pointer hover:bg-gray-50 rounded">
                         <input
                           type="checkbox"

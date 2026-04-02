@@ -33,9 +33,22 @@ export const dashboardAPI = {
     })
   },
 
-  getWorstPackages: ({ from, to, page = 1, pageSize = 50, sortBy = 'getPages' } = {}) => {
+  getWorstPackages: ({
+    from,
+    to,
+    page,
+    pageNumber,
+    pageSize = 15,
+    sortBy = 'DB2_CPU'
+  } = {}) => {
     return apiClient.get('/dashboard/worst-packages', {
-      params: { from, to, page, pageSize, sortBy }
+      params: {
+        from,
+        to,
+        pageNumber: pageNumber ?? page ?? 1,
+        pageSize,
+        sortBy,
+      }
     })
   },
 

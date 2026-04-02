@@ -43,14 +43,18 @@ Query:
 - `from` (required)
 - `to` (required)
 
-Response `data`:
+Response:
 
 ```json
 {
-  "totalCpu": 125420,
-  "totalElapsed": 245680,
-  "totalGetPages": 5234000,
-  "totalSqlCalls": 125000
+  "data": {
+    "totalCpu": 25056,
+    "totalElapsed": 112592,
+    "totalGetPages": 7187091651,
+    "totalSqlCalls": 343789304
+  },
+  "meta": null,
+  "error": null
 }
 ```
 
@@ -78,25 +82,36 @@ Response `data` (array):
 Query:
 - `from` (required)
 - `to` (required)
-- `page` (optional, default `1`)
-- `pageSize` (optional, default `50`)
-- `sortBy` (optional: `cpu|elapsed|getPages|sqlCalls`, default `getPages`)
+- `pageNumber` (optional, default `1`)
+- `pageSize` (optional, default `15`)
+- `sortBy` (optional, e.g. `DB2_CPU`)
 
-Response `data.items`:
+Response:
 
 ```json
-[
-  {
-    "id": 42,
-    "name": "PACKAGE_042",
-    "program": "ORDER_SVC",
-    "totalCpu": 12345,
-    "totalElapsed": 56789,
-    "totalGetPages": 456700,
-    "totalSqlCalls": 9865,
-    "sqlCallsToCpuRatio": "0.80"
-  }
-]
+{
+  "data": [
+    {
+      "collection": "PDB2I",
+      "program": "xxx",
+      "consistencyToken": "xxx",
+      "db2Elapsed": 1405,
+      "getPages": 43000,
+      "sqlCalls": 2430000,
+      "binds": [
+        {
+          "conToken": "xxxx",
+          "bindTime": "xxxx",
+          "version": "xxxx"
+        }
+      ],
+      "sqlStatements": [],
+      "db2Cpu": 1299
+    }
+  ],
+  "meta": null,
+  "error": null
+}
 ```
 
 ### GET `/dashboard/worst-statements`
@@ -129,96 +144,138 @@ Query:
 
 ## 2) Packages
 
+All package controller endpoints return the same package structure.
+Behavior:
+- `/packages/{packageName}/binds`: `binds` is populated and `sqlStatements` is empty.
+- `/packages/{packageName}/statements`: `sqlStatements` is populated and `binds` is empty.
+
 ### GET `/packages`
 Query:
-- `page` (optional)
-- `pageSize` (optional)
-- `search` (optional)
+- `topN` (optional, e.g. `10`)
 
-Behavior requirements:
-- Must support very large package volumes (thousands+ rows).
-- Must support typeahead search by package name and/or package ID.
-- Recommended default sort: worst by CPU (descending) unless explicitly overridden.
-- For typeahead in Package Analyzer, backend should return quickly for `pageSize=25`.
-
-Response `data.items`:
-
-```json
-[
-  {
-    "id": 1,
-    "name": "PACKAGE_001",
-    "program": "ORDER_SVC"
-  }
-]
-```
-
-Recommended `meta` for paging UIs:
+Response:
 
 ```json
 {
-  "page": 1,
-  "pageSize": 25,
-  "totalItems": 12450,
-  "totalPages": 498
+  "data": [
+    {
+      "collection": "PDB2I",
+      "program": "xxx",
+      "consistencyToken": "xxx",
+      "db2Elapsed": 1405,
+      "getPages": 43000,
+      "sqlCalls": 2430000,
+      "binds": [
+        {
+          "conToken": "xxxx",
+          "bindTime": "xxxx",
+          "version": "xxxx"
+        }
+      ],
+      "sqlStatements": [
+        {
+          "seqNumber": 0,
+          "statementNumber": 0,
+          "statement": ""
+        }
+      ],
+      "db2Cpu": 1299
+    }
+  ],
+  "meta": null,
+  "error": null
 }
 ```
 
-### GET `/packages/:packageId`
-Response `data`:
+### GET `/packages/{packageName}`
+Query:
+- `showBinds` (optional, boolean)
+- `showStatements` (optional, boolean)
+
+Response:
 
 ```json
 {
-  "id": 1,
-  "name": "PACKAGE_001",
-  "program": "ORDER_SVC",
-  "collection": "XDB2I"
+  "data": {
+    "collection": "PDB2I",
+    "program": "xxx",
+    "consistencyToken": "xxx",
+    "db2Elapsed": 1405,
+    "getPages": 43000,
+    "sqlCalls": 2430000,
+    "binds": [
+      {
+        "conToken": "xxxx",
+        "bindTime": "xxxx",
+        "version": "xxxx"
+      }
+    ],
+    "sqlStatements": [
+      {
+        "seqNumber": 0,
+        "statementNumber": 0,
+        "statement": ""
+      }
+    ],
+    "db2Cpu": 1299
+  },
+  "meta": null,
+  "error": null
 }
 ```
 
-### GET `/packages/:packageId/bindings`
-Response `data` (array):
+### GET `/packages/{packageName}/binds`
+Response:
 
 ```json
-[
-  {
-    "contoken": "CTABC123",
-    "bindTime": "2026-12-03T10:15:30",
-    "isolationLevel": "CS",
-    "statementCount": 80
-  }
-]
+{
+  "data": {
+    "collection": "PDB2I",
+    "program": "xxx",
+    "consistencyToken": "xxx",
+    "db2Elapsed": 1405,
+    "getPages": 43000,
+    "sqlCalls": 2430000,
+    "binds": [
+      {
+        "conToken": "xxxx",
+        "bindTime": "xxxx",
+        "version": "xxxx"
+      }
+    ],
+    "sqlStatements": [],
+    "db2Cpu": 1299
+  },
+  "meta": null,
+  "error": null
+}
 ```
 
-### GET `/packages/:packageId/trend`
-Query:
-- `from` (required)
-- `to` (required)
-
-Response `data` (array): same shape as `metrics-trend`.
-
-### GET `/packages/:packageId/statements`
-Query:
-- `page` (optional)
-- `pageSize` (optional)
-- `sortBy` (optional)
-- `search` (optional)
-- `from` (required)
-- `to` (required)
-
-Response `data.items`:
+### GET `/packages/{packageName}/statements`
+Response:
 
 ```json
-[
-  {
-    "id": 501,
-    "sqlText": "SELECT ...",
-    "executionCount": 120,
-    "totalCpu": 5000,
-    "totalElapsed": 13000,
-    "totalGetPages": 64000
-  }
-]
+{
+  "data": {
+    "collection": "PDB2I",
+    "program": "xxx",
+    "consistencyToken": "xxx",
+    "db2Elapsed": 1405,
+    "getPages": 43000,
+    "sqlCalls": 2430000,
+    "binds": [],
+    "sqlStatements": [
+      {
+        "seqNumber": 0,
+        "statementNumber": 0,
+        "statement": ""
+      }
+    ],
+    "db2Cpu": 1299
+  },
+  "meta": null,
+  "error": null
+}
 ```
 
 ### POST `/packages/:packageId/rebind`
