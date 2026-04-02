@@ -39,8 +39,10 @@ export default function PackageAnalyzer() {
   const itemsPerPage = 50
 
   useEffect(() => {
-    const initialPackageId = Number(location.state?.packageId) || null
-    if (!initialPackageId) return
+    const rawInitialPackageId = location.state?.packageId
+    if (rawInitialPackageId === undefined || rawInitialPackageId === null || rawInitialPackageId === '') return
+
+    const initialPackageId = String(rawInitialPackageId)
 
     const loadInitialPackage = async () => {
       setPackageSearchLoading(true)
@@ -53,7 +55,7 @@ export default function PackageAnalyzer() {
           program: payload.program ?? payload.programName ?? 'N/A',
         }
         setPackageOptions([normalized])
-        setSelectedPackageId(Number(normalized.id))
+        setSelectedPackageId(String(normalized.id))
         setSearchQuery(normalized.name)
       } catch {
         setSelectedPackageId(initialPackageId)
@@ -85,7 +87,7 @@ export default function PackageAnalyzer() {
 
         const normalizedOptions = Array.isArray(packageList)
           ? packageList.map((pkg, idx) => ({
-              id: pkg.id ?? pkg.packageId ?? idx + 1,
+              id: String(pkg.id ?? pkg.packageId ?? idx + 1),
               name: pkg.name ?? pkg.packageName ?? `PACKAGE_${idx + 1}`,
               program: pkg.program ?? pkg.programName ?? 'N/A',
             }))
@@ -123,9 +125,16 @@ export default function PackageAnalyzer() {
         ])
 
         const packagePayload = packageRes.data?.data ?? packageRes.data ?? {}
-        const bindingsPayload = bindingsRes.data?.data ?? bindingsRes.data ?? []
+        const bindingsPayload =
+          bindingsRes.data?.data?.binds ??
+          bindingsRes.data?.binds ??
+          bindingsRes.data?.data ??
+          bindingsRes.data ??
+          []
         const trendPayload = trendRes.data?.data ?? trendRes.data ?? []
         const statementsPayload =
+          statementsRes.data?.data?.sqlStatements ??
+          statementsRes.data?.sqlStatements ??
           statementsRes.data?.items ??
           statementsRes.data?.data?.items ??
           statementsRes.data?.data ??
@@ -152,7 +161,12 @@ export default function PackageAnalyzer() {
           name: packagePayload.name ?? packagePayload.packageName ?? `PACKAGE_${selectedPackageId}`,
           program: packagePayload.program ?? packagePayload.programName ?? 'N/A',
           collection: packagePayload.collection ?? 'XDB2I',
-          binds: Array.isArray(bindingsPayload) ? bindingsPayload : [],
+          binds: Array.isArray(bindingsPayload)
+            ? bindingsPayload.map((bind) => ({
+                ...bind,
+                contoken: bind.contoken ?? bind.conToken,
+              }))
+            : [],
           statements: normalizedStatements,
           trends: Array.isArray(trendPayload) ? trendPayload : [],
         })
@@ -170,7 +184,7 @@ export default function PackageAnalyzer() {
   }, [selectedPackageId, interval])
 
   const handlePackageSelect = (pkg) => {
-    setSelectedPackageId(Number(pkg.id))
+    setSelectedPackageId(String(pkg.id))
     setSearchQuery(pkg.name)
     setCurrentPage(1)
   }
@@ -237,7 +251,7 @@ export default function PackageAnalyzer() {
             )}
 
             {!packageSearchLoading && packageOptions.map((pkg) => {
-              const isSelected = Number(pkg.id) === Number(selectedPackageId)
+              const isSelected = String(pkg.id) === String(selectedPackageId)
               return (
                 <button
                   key={pkg.id}

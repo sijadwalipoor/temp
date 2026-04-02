@@ -152,7 +152,7 @@ export default function WatchList() {
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => navigate('/package-analyzer', { state: { packageId: Number(pkg.id) } })}
+                          onClick={() => navigate('/package-analyzer', { state: { packageId: pkg.id } })}
                           className="px-3 py-2 bg-primary text-white rounded font-medium text-xs hover:bg-primaryDark transition-colors"
                         >
                           Open

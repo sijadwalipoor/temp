@@ -67,37 +67,42 @@ export const dashboardAPI = {
 
 // API Endpoints for Package Analyzer
 export const packageAPI = {
-  getPackage: (packageId) => {
-    return apiClient.get(`/packages/${packageId}`)
+  getPackage: (packageName) => {
+    return apiClient.get(`/packages/${packageName}`)
   },
 
   listPackages: ({ page = 1, pageSize = 50, search = '' } = {}) => {
     return apiClient.get('/packages', {
-      params: { page, pageSize, search }
+      params: {
+        topN: pageSize,
+        page,
+        pageSize,
+        search,
+      }
     })
   },
 
-  getPackagePerformanceTrend: (packageId, { from, to } = {}) => {
-    return apiClient.get(`/packages/${packageId}/trend`, {
+  getPackagePerformanceTrend: (packageName, { from, to } = {}) => {
+    return apiClient.get(`/packages/${packageName}/trend`, {
       params: { from, to }
     })
   },
 
-  getBindingHistory: (packageId) => {
-    return apiClient.get(`/packages/${packageId}/bindings`)
+  getBindingHistory: (packageName) => {
+    return apiClient.get(`/packages/${packageName}/binds`)
   },
 
   getPackageStatements: (
-    packageId,
+    packageName,
     { page = 1, pageSize = 50, sortBy = 'getPages', search = '', from, to } = {}
   ) => {
-    return apiClient.get(`/packages/${packageId}/statements`, {
+    return apiClient.get(`/packages/${packageName}/statements`, {
       params: { page, pageSize, sortBy, search, from, to }
     })
   },
 
-  rebindPackage: (packageId, options = {}) => {
-    return apiClient.post(`/packages/${packageId}/rebind`, options)
+  rebindPackage: (packageName, options = {}) => {
+    return apiClient.post(`/packages/${packageName}/rebind`, options)
   },
 }
 
@@ -151,7 +156,7 @@ export const explainAPI = {
   runDynamicExplain: (sqlText, options = {}) => {
     return apiClient.post('/explain/dynamic', {
       sqlText,
-      ...options
+      options,
     })
   },
 
