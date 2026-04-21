@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, ComposedChart, Bar
+  Tooltip, Legend, ResponsiveContainer, ComposedChart, Bar,
 } from 'recharts'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Star } from 'lucide-react'
 import TimeRangePicker from '../components/TimeRangePicker'
 import MetricsCard from '../components/MetricsCard'
 import FilterBar from '../components/FilterBar'
@@ -12,14 +12,15 @@ import Paginator from '../components/Paginator'
 import StatusBanner from '../components/StatusBanner'
 import { CpuIcon, TimerIcon, GetPagesIcon, RefreshIcon } from '../utils/icons'
 import { formatIntervalLabel, getIntervalFromNow } from '../utils/timeInterval'
-import { METRIC_OPTIONS } from './dashboard.utils'
+import { METRIC_OPTIONS, SORT_OPTIONS, formatAxisValue, formatChartTick, formatChartTooltipLabel } from './dashboard.utils'
 import { useDashboardData } from '../hooks/useDashboardData'
 import {
   FAVORITE_PACKAGES_STORAGE_KEY,
-  REVIEWED_PACKAGES_STORAGE_KEY,
-  readPackageIdSet,
-  writePackageIdSet,
+  readPackageMap,
+  writePackageMap,
 } from '../utils/packageState'
+
+const SORT_SELECT_OPTIONS = SORT_OPTIONS.map((opt) => ({ value: opt.value, label: `Sort by ${opt.label}` }))
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -28,62 +29,60 @@ export default function Dashboard() {
   const [selectedMetricKeys, setSelectedMetricKeys] = useState(['cpu', 'elapsed'])
   const [isMetricsMenuOpen, setIsMetricsMenuOpen] = useState(false)
   const [refreshCounter, setRefreshCounter] = useState(0)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [filterCriteria, setFilterCriteria] = useState({
-    search: '',
-    sort: 'getpages',
-  })
-  const [reviewedPackageIds, setReviewedPackageIds] = useState(() => readPackageIdSet(REVIEWED_PACKAGES_STORAGE_KEY))
-  const [favoritePackageIds, setFavoritePackageIds] = useState(() => readPackageIdSet(FAVORITE_PACKAGES_STORAGE_KEY))
-  const [itemsPerPage, setItemsPerPage] = useState(25)
+  const [pageNumber, setPageNumber] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [sortBy, setSortBy] = useState('DB2_CPU')
+  const [search, setSearch] = useState('')
+  const [favorites, setFavorites] = useState(() => readPackageMap(FAVORITE_PACKAGES_STORAGE_KEY))
 
-  const { chartData, packages, kpis, loading, error } = useDashboardData(interval, refreshCounter)
+  const { chartData, packages, kpis, meta, loading, error } = useDashboardData({
+    interval, pageNumber, pageSize, sortBy, refreshCounter,
+  })
 
   const selectedMetrics = METRIC_OPTIONS.filter((metric) => selectedMetricKeys.includes(metric.key))
   const selectedMetricsLabel =
     selectedMetrics.length > 2
-      ? `${selectedMetrics.slice(0, 2).map((metric) => metric.label).join(', ')}, ...`
-      : selectedMetrics.map((metric) => metric.label).join(', ')
+      ? `${selectedMetrics.slice(0, 2).map((m) => m.label).join(', ')}, ...`
+      : selectedMetrics.map((m) => m.label).join(', ')
   const areAllMetricsSelected = selectedMetricKeys.length === METRIC_OPTIONS.length
   const primaryUnit = selectedMetrics[0]?.unit
   const showSecondaryAxis = selectedMetrics.some((metric) => metric.unit !== primaryUnit)
   const intervalLabel = formatIntervalLabel(interval)
 
+  const chartSpanMs = useMemo(() => {
+    if (chartData.length < 2) return 0
+    const first = chartData[0].timestamp
+    const last = chartData[chartData.length - 1].timestamp
+    return Math.max(0, last - first)
+  }, [chartData])
+
+  useEffect(() => {
+    writePackageMap(FAVORITE_PACKAGES_STORAGE_KEY, favorites)
+  }, [favorites])
+
   useEffect(() => {
     if (!isMetricsMenuOpen) return undefined
 
-    const handleDocumentMouseDown = (event) => {
+    const handleMouseDown = (event) => {
       if (metricsDropdownRef.current && !metricsDropdownRef.current.contains(event.target)) {
         setIsMetricsMenuOpen(false)
       }
     }
-
     const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setIsMetricsMenuOpen(false)
-      }
+      if (event.key === 'Escape') setIsMetricsMenuOpen(false)
     }
 
-    document.addEventListener('mousedown', handleDocumentMouseDown)
+    document.addEventListener('mousedown', handleMouseDown)
     document.addEventListener('keydown', handleEscape)
-
     return () => {
-      document.removeEventListener('mousedown', handleDocumentMouseDown)
+      document.removeEventListener('mousedown', handleMouseDown)
       document.removeEventListener('keydown', handleEscape)
     }
   }, [isMetricsMenuOpen])
 
-  useEffect(() => {
-    writePackageIdSet(REVIEWED_PACKAGES_STORAGE_KEY, reviewedPackageIds)
-  }, [reviewedPackageIds])
-
-  useEffect(() => {
-    writePackageIdSet(FAVORITE_PACKAGES_STORAGE_KEY, favoritePackageIds)
-  }, [favoritePackageIds])
-
   const handleTimeRangeChange = ({ from, to }) => {
     setInterval({ from, to })
-    setCurrentPage(1)
+    setPageNumber(1)
   }
 
   const toggleMetricSelection = (metricKey) => {
@@ -96,20 +95,9 @@ export default function Dashboard() {
     })
   }
 
-  const selectAllMetrics = () => {
-    setSelectedMetricKeys(METRIC_OPTIONS.map((metric) => metric.key))
-  }
-
-  const clearToDefaultMetrics = () => {
-    setSelectedMetricKeys(['cpu'])
-  }
-
   const toggleAllMetrics = () => {
-    if (areAllMetricsSelected) {
-      clearToDefaultMetrics()
-      return
-    }
-    selectAllMetrics()
+    if (areAllMetricsSelected) setSelectedMetricKeys(['cpu'])
+    else setSelectedMetricKeys(METRIC_OPTIONS.map((metric) => metric.key))
   }
 
   const renderMetricSeries = (metric) => {
@@ -143,76 +131,36 @@ export default function Dashboard() {
     )
   }
 
-  const handleFilterChange = ({ search, sort }) => {
-    setFilterCriteria({
-      search: search ?? '',
-      sort: sort ?? 'getpages',
-    })
-    setCurrentPage(1)
+  const handleFilterChange = ({ search: nextSearch, sort }) => {
+    setSearch(nextSearch ?? '')
+    if (sort) setSortBy(sort)
+    setPageNumber(1)
   }
 
-  const toggleReviewed = (packageId) => {
-    const id = String(packageId)
-    setReviewedPackageIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
+  const visiblePackages = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return packages
+    return packages.filter((pkg) =>
+      pkg.displayName.toLowerCase().includes(term) ||
+      pkg.program.toLowerCase().includes(term)
+    )
+  }, [packages, search])
+
+  const toggleFavorite = (pkg) => {
+    setFavorites((prev) => {
+      const next = { ...prev }
+      if (next[pkg.packageKey]) delete next[pkg.packageKey]
+      else next[pkg.packageKey] = packageSummary(pkg)
       return next
     })
   }
 
-  const toggleFavorite = (packageId) => {
-    const id = String(packageId)
-    setFavoritePackageIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
+  const openAnalyzer = (pkg) => {
+    navigate('/package-viewer', { state: { packageName: pkg.program, packageKey: pkg.packageKey } })
   }
-
-  const filteredPackages = useMemo(() => {
-    const visiblePackages = packages.filter((pkg) => !reviewedPackageIds.has(String(pkg.id)))
-    let filtered = [...visiblePackages]
-
-    const searchValue = filterCriteria.search.trim().toLowerCase()
-    if (searchValue) {
-      filtered = filtered.filter((pkg) =>
-        pkg.name.toLowerCase().includes(searchValue) ||
-        pkg.program.toLowerCase().includes(searchValue)
-      )
-    }
-
-    if (filterCriteria.sort === 'cpu') {
-      filtered.sort((a, b) => b.totalCpu - a.totalCpu)
-    } else if (filterCriteria.sort === 'elapsed') {
-      filtered.sort((a, b) => b.totalElapsed - a.totalElapsed)
-    } else if (filterCriteria.sort === 'getpages') {
-      filtered.sort((a, b) => b.totalGetPages - a.totalGetPages)
-    }
-
-    return filtered
-  }, [packages, reviewedPackageIds, filterCriteria])
-
-  const watchListPackages = useMemo(() => {
-    const favorites = packages.filter((pkg) => favoritePackageIds.has(String(pkg.id)))
-    return favorites.sort((a, b) => b.totalCpu - a.totalCpu)
-  }, [packages, favoritePackageIds])
-
-  const paginatedPackages = filteredPackages.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
 
   return (
     <div className="p-8 space-y-8 bg-light min-h-screen">
-      {/* Header Section */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-gray-900">System Overview</h2>
@@ -227,52 +175,18 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Time Range Picker */}
       <TimeRangePicker onRangeChange={handleTimeRangeChange} defaultInterval={interval} />
 
       {loading && <StatusBanner type="info" message="Loading dashboard data..." />}
-
       <StatusBanner type="error" message={error} />
 
-
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricsCard
-          title="Total DB2 CPU"
-          value={kpis.totalCpu}
-          unit="ms"
-          trend={5}
-          icon={CpuIcon}
-          status="warning"
-        />
-        <MetricsCard
-          title="Total Elapsed Time"
-          value={kpis.totalElapsed}
-          unit="ms"
-          trend={-3}
-          icon={TimerIcon}
-          status="normal"
-        />
-        <MetricsCard
-          title="Total Get Pages"
-          value={kpis.totalGetPages}
-          unit="pages"
-          trend={12}
-          icon={GetPagesIcon}
-          status="critical"
-        />
-        <MetricsCard
-          title="Total SQL Calls"
-          value={kpis.totalSqlCalls}
-          unit="calls"
-          trend={-2}
-          icon={RefreshIcon}
-          status="healthy"
-        />
+        <MetricsCard title="Total DB2 CPU" value={kpis.totalCpu} unit="ms" icon={CpuIcon} />
+        <MetricsCard title="Total Elapsed Time" value={kpis.totalElapsed} unit="ms" icon={TimerIcon} />
+        <MetricsCard title="Total Get Pages" value={kpis.totalGetPages} unit="pages" icon={GetPagesIcon} />
+        <MetricsCard title="Total SQL Calls" value={kpis.totalSqlCalls} unit="calls" icon={RefreshIcon} />
       </div>
 
-
-      {/* Charts Section */}
       <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
           <div>
@@ -325,137 +239,113 @@ export default function Dashboard() {
         </div>
 
         <ResponsiveContainer width="100%" height={420}>
-          <ComposedChart data={chartData}>
+          <ComposedChart data={chartData} margin={{ top: 20, right: 20, bottom: 0, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="time" stroke="#9ca3af" />
-            <YAxis yAxisId="left" stroke="#9ca3af" />
-            {showSecondaryAxis && <YAxis yAxisId="right" orientation="right" stroke="#9ca3af" />}
+            <XAxis
+              dataKey="timestamp"
+              type="number"
+              scale="time"
+              domain={['dataMin', 'dataMax']}
+              padding={{ left: 20, right: 20 }}
+              tickFormatter={(value) => formatChartTick(value, chartSpanMs)}
+              stroke="#9ca3af"
+            />
+            <YAxis yAxisId="left" width={70} tickFormatter={formatAxisValue} domain={[0, 'auto']} stroke="#9ca3af" />
+            {showSecondaryAxis && <YAxis yAxisId="right" orientation="right" width={70} tickFormatter={formatAxisValue} domain={[0, 'auto']} stroke="#9ca3af" />}
             <Tooltip
+              labelFormatter={(value) => formatChartTooltipLabel(value)}
               formatter={(value, name) => [`${value?.toLocaleString?.() ?? value}`, name]}
               contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
             />
             <Legend />
-
             {selectedMetrics.map((metric) => renderMetricSeries(metric))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Filter & Packages Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
         <div className="p-6 border-b border-gray-200 bg-gray-50">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Worst Performing Packages</h3>
-              <p className="text-xs text-gray-500 mt-1">Top packages between {intervalLabel} by CPU, elapsed time, and get pages</p>
+              <p className="text-xs text-gray-500 mt-1">Top packages between {intervalLabel}</p>
             </div>
             <span className="text-sm font-medium text-gray-600 bg-white px-3 py-1 rounded border border-gray-300">
-              {filteredPackages.length} packages
+              {meta.totalItems.toLocaleString()} packages
             </span>
           </div>
 
-          <div className="mb-4 p-4 rounded-lg border border-gray-200 bg-white">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Watch List</h4>
-              <span className="text-xs font-medium text-gray-600">{watchListPackages.length} favorited</span>
-            </div>
-
-            {watchListPackages.length === 0 ? (
-              <p className="text-sm text-gray-500">No favorited packages yet. Click Watch on a package to add it here.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {watchListPackages.slice(0, 10).map((pkg) => {
-                  const isReviewed = reviewedPackageIds.has(String(pkg.id))
-                  return (
-                    <div key={pkg.id} className="px-3 py-2 rounded border border-gray-300 bg-gray-50 text-sm flex items-center gap-2">
-                      <span className="font-semibold text-gray-900">{pkg.name}</span>
-                      <span className="text-gray-600">CPU: {pkg.totalCpu.toLocaleString()}</span>
-                      {isReviewed && <span className="text-xs text-amber-700 font-medium">Reviewed</span>}
-                      <button
-                        onClick={() => navigate('/package-analyzer', { state: { packageId: pkg.id } })}
-                        className="px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primaryDark transition-colors"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          <FilterBar
-            onFilterChange={handleFilterChange}
-            sortOptions={[
-              { value: 'getpages', label: 'Sort by Get Pages' },
-              { value: 'cpu', label: 'Sort by CPU' },
-              { value: 'elapsed', label: 'Sort by Elapsed' },
-            ]}
-          />
+          <FilterBar onFilterChange={handleFilterChange} sortOptions={SORT_SELECT_OPTIONS} />
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-2 py-4 text-center font-semibold text-gray-700 uppercase text-xs tracking-wide w-10"><span className="sr-only">Watch</span></th>
                 <th className="px-4 py-4 text-center font-semibold text-gray-700 uppercase text-xs tracking-wide w-12">#</th>
                 <th className="px-6 py-4 text-left font-semibold text-gray-700 uppercase text-xs tracking-wide">Package</th>
                 <th className="px-6 py-4 text-right font-semibold text-gray-700 uppercase text-xs tracking-wide">CPU (ms)</th>
                 <th className="px-6 py-4 text-right font-semibold text-gray-700 uppercase text-xs tracking-wide">SQL Calls</th>
-                <th className="px-6 py-4 text-right font-semibold text-gray-700 uppercase text-xs tracking-wide">Ratio</th>
+                <th className="px-6 py-4 text-right font-semibold text-gray-700 uppercase text-xs tracking-wide">Calls / CPU ms</th>
                 <th className="px-6 py-4 text-right font-semibold text-gray-700 uppercase text-xs tracking-wide">Elapsed (ms)</th>
                 <th className="px-6 py-4 text-right font-semibold text-gray-700 uppercase text-xs tracking-wide">Get Pages</th>
                 <th className="px-6 py-4 text-center font-semibold text-gray-700 uppercase text-xs tracking-wide">Action</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedPackages.map((pkg, idx) => {
-                const rowNumber = (currentPage - 1) * itemsPerPage + idx + 1
+              {visiblePackages.map((pkg, idx) => {
+                const rowNumber = (pageNumber - 1) * pageSize + idx + 1
+                const isFav = Boolean(favorites[pkg.packageKey])
                 return (
-                  <tr key={pkg.id} className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                  <tr key={pkg.packageKey} className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                    <td className="px-2 py-4 text-center">
+                      <button
+                        onClick={() => toggleFavorite(pkg)}
+                        title={isFav ? 'Unwatch' : 'Watch'}
+                        aria-label={isFav ? 'Unwatch package' : 'Watch package'}
+                        className="p-1 rounded hover:bg-gray-100 transition-colors"
+                      >
+                        <Star
+                          size={18}
+                          className={isFav ? 'text-amber-500' : 'text-gray-300 hover:text-gray-400'}
+                          fill={isFav ? '#f59e0b' : 'none'}
+                        />
+                      </button>
+                    </td>
                     <td className="px-4 py-4 text-center text-gray-600 font-medium">{rowNumber}</td>
-                    <td className="px-6 py-4 font-medium text-gray-900">{pkg.name}</td>
+                    <td className="px-6 py-4 font-medium">
+                      <button
+                        onClick={() => openAnalyzer(pkg)}
+                        className="text-primary hover:text-primaryDark hover:underline font-medium text-left"
+                      >
+                        {pkg.displayName}
+                      </button>
+                    </td>
                     <td className="px-6 py-4 text-right text-gray-900 font-medium">{pkg.totalCpu.toLocaleString()}</td>
                     <td className="px-6 py-4 text-right text-gray-900 font-medium">{pkg.totalSqlCalls.toLocaleString()}</td>
                     <td className="px-6 py-4 text-right">
-                      <span className="font-semibold text-blue-600">{pkg.sqlCallsToCpuRatio}</span>
+                      <span className="font-semibold text-blue-600">{pkg.callsPerCpuMs}</span>
                     </td>
                     <td className="px-6 py-4 text-right text-gray-900 font-medium">{pkg.totalElapsed.toLocaleString()}</td>
                     <td className="px-6 py-4 text-right">
                       <span className="font-semibold text-danger">{pkg.totalGetPages.toLocaleString()}</span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => toggleFavorite(pkg.id)}
-                          className={`px-2 py-1 rounded font-medium text-xs transition-colors border ${favoritePackageIds.has(String(pkg.id)) ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
-                        >
-                          {favoritePackageIds.has(String(pkg.id)) ? 'Watching' : 'Watch'}
-                        </button>
-
-                        <button
-                          onClick={() => toggleReviewed(pkg.id)}
-                          className="px-2 py-1 rounded font-medium text-xs transition-colors border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
-                        >
-                          Reviewed
-                        </button>
-
-                        <button
-                          onClick={() => navigate('/package-analyzer', { state: { packageId: pkg.id } })}
-                          className="px-3 py-2 bg-primary text-white rounded font-medium text-xs hover:bg-primaryDark transition-colors"
-                        >
-                          Analyze
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => openAnalyzer(pkg)}
+                        className="px-3 py-2 bg-primary text-white rounded font-medium text-xs hover:bg-primaryDark transition-colors"
+                      >
+                        Analyze
+                      </button>
                     </td>
                   </tr>
                 )
               })}
 
-              {paginatedPackages.length === 0 && (
+              {visiblePackages.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-6 py-10 text-center text-sm text-gray-500">
                     No package data available for the selected interval.
                   </td>
                 </tr>
@@ -464,37 +354,48 @@ export default function Dashboard() {
           </table>
         </div>
 
-        {/* Table Footer */}
-          <div className="border-t border-gray-200 pt-4 py-4 px-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3 self-start">
-              <label htmlFor="itemsPerPageSelect" className="text-xs font-semibold text-gray-700 uppercase tracking-wide whitespace-nowrap">
-                Rows per page
-              </label>
-              <select
-                id="itemsPerPageSelect"
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value))
-                  setCurrentPage(1)
-                }}
-                className="h-9 px-3 border border-gray-300 rounded-md text-sm bg-white text-gray-900 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
+        <div className="border-t border-gray-200 pt-4 py-4 px-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3 self-start">
+            <label htmlFor="pageSizeSelect" className="text-xs font-semibold text-gray-700 uppercase tracking-wide whitespace-nowrap">
+              Rows per page
+            </label>
+            <select
+              id="pageSizeSelect"
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value))
+                setPageNumber(1)
+              }}
+              className="h-9 px-3 border border-gray-300 rounded-md text-sm bg-white text-gray-900 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
 
-            <Paginator
-              currentPage={currentPage}
-              totalItems={filteredPackages.length}
-              itemsPerPage={itemsPerPage}
-              onPageChange={setCurrentPage}
-              embedded
-            />
+          <Paginator
+            currentPage={pageNumber}
+            totalItems={meta.totalItems}
+            itemsPerPage={pageSize}
+            onPageChange={setPageNumber}
+            embedded
+          />
         </div>
       </div>
     </div>
   )
 }
+
+const packageSummary = (pkg) => ({
+  packageKey: pkg.packageKey,
+  collection: pkg.collection,
+  program: pkg.program,
+  conToken: pkg.conToken,
+  displayName: pkg.displayName,
+  totalCpu: pkg.totalCpu,
+  totalElapsed: pkg.totalElapsed,
+  totalGetPages: pkg.totalGetPages,
+  totalSqlCalls: pkg.totalSqlCalls,
+})

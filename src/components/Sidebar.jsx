@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useContext, useState } from 'react'
-import { DashboardIcon, EyeIcon, PackageIcon, SearchIcon, SettingsIcon } from '../utils/icons'
+import { DashboardIcon, EyeIcon, PackageIcon } from '../utils/icons'
 import { AppContext } from '../context/AppContext'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -11,10 +11,8 @@ export default function Sidebar() {
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: DashboardIcon },
-    { path: '/package-analyzer', label: 'Package Analyzer', icon: PackageIcon },
+    { path: '/package-viewer', label: 'Package Viewer', icon: PackageIcon },
     { path: '/watch-list', label: 'Watch List', icon: EyeIcon },
-    { path: '/access-path', label: 'Access Path Viewer', icon: SearchIcon },
-    { path: '/settings', label: 'Settings', icon: SettingsIcon },
   ]
 
   const isActive = (path) => location.pathname === path
@@ -77,7 +75,7 @@ export default function Sidebar() {
       <div className="p-4 border-t border-gray-800 bg-gray-950">
         {!sidebarCollapsed && (
           <div className="text-xs text-gray-500 space-y-2">
-            <p>DB2 Performance Viz</p>
+            <p>Sijad Walipoor</p>
             <p className="text-gray-600">v1.0.0</p>
           </div>
         )}

@@ -3,11 +3,9 @@ import { AppProvider } from './context/AppContext'
 import Navbar from './components/Navbar'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
-import PackageAnalyzer from './pages/PackageAnalyzer'
+import PackageViewer from './pages/PackageViewer'
 import StatementAnalyzer from './pages/StatementAnalyzer'
-import AccessPathViewer from './pages/AccessPathViewer'
 import WatchList from './pages/WatchList'
-import Settings from './pages/Settings'
 
 function App() {
   return (
@@ -20,11 +18,10 @@ function App() {
             <main className="flex-1 overflow-auto bg-light">
               <Routes>
                 <Route path="/" element={<Dashboard />} />
-                <Route path="/package-analyzer" element={<PackageAnalyzer />} />
+                <Route path="/package-viewer" element={<PackageViewer />} />
+                <Route path="/package-analyzer" element={<Navigate to="/package-viewer" replace />} />
                 <Route path="/watch-list" element={<WatchList />} />
                 <Route path="/statement/:statementId" element={<StatementAnalyzer />} />
-                <Route path="/access-path" element={<AccessPathViewer />} />
-                <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </main>

@@ -8,73 +8,119 @@ export const EMPTY_KPIS = {
 export const METRIC_OPTIONS = [
   { key: 'getPages', label: 'Get Pages', unit: 'pages', color: '#8b5cf6', chartType: 'bar' },
   { key: 'cpu', label: 'CPU', unit: 'ms', color: '#da1e28', chartType: 'line' },
-  { key: 'elapsed', label: 'Elapsed Time', unit: 'ms', color: '#0043ce', chartType: 'line' },
+  { key: 'elapsed', label: 'Elapsed Time', unit: 'ms', color: '#cd3434', chartType: 'line' },
   { key: 'sqlCalls', label: 'SQL Calls', unit: 'calls', color: '#f59e0b', chartType: 'line' },
 ]
 
-const toNumberOrZero = (value) => {
+export const SORT_OPTIONS = [
+  { value: 'DB2_CPU', label: 'CPU' },
+  { value: 'DB2_ELAPSED', label: 'Elapsed' },
+  { value: 'GETPAGES', label: 'Get Pages' },
+  { value: 'SQL_CALLS', label: 'SQL Calls' },
+]
+
+const toNumber = (value) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-export const getApiErrorMessage = (result, fallbackMessage) => {
-  if (!result || result.status !== 'rejected') return ''
-  return result.reason?.response?.data?.message || result.reason?.message || fallbackMessage
-}
+export const getErrorMessage = (error, fallback) =>
+  error?.response?.data?.error?.message || error?.message || fallback
 
-export const extractEnvelopeData = (payload) => {
-  if (!payload || typeof payload !== 'object') return payload
-  if ('data' in payload && payload.data !== undefined && payload.data !== null) {
-    return payload.data
-  }
-  return payload
-}
-
-export const normalizeKpiPayload = (payload) => {
-  const data = extractEnvelopeData(payload) || {}
-
+export const normalizeKpis = (kpi) => {
+  if (!kpi) return EMPTY_KPIS
   return {
-    totalCpu: toNumberOrZero(data.totalCpu ?? data.totalCPU ?? data.total_cpu ?? data.cpu),
-    totalElapsed: toNumberOrZero(data.totalElapsed ?? data.totalELAPSED ?? data.total_elapsed ?? data.elapsed),
-    totalGetPages: toNumberOrZero(data.totalGetPages ?? data.totalGETPAGES ?? data.total_get_pages ?? data.getPages),
-    totalSqlCalls: toNumberOrZero(data.totalSqlCalls ?? data.totalSQLCalls ?? data.total_sql_calls ?? data.sqlCalls),
+    totalCpu: toNumber(kpi.totalCpu),
+    totalElapsed: toNumber(kpi.totalElapsed),
+    totalGetPages: toNumber(kpi.totalGetPages),
+    totalSqlCalls: toNumber(kpi.totalSqlCalls),
   }
 }
 
-export const normalizeTrendPoint = (point, idx) => {
-  const fallbackTime = new Date(Date.now() - (23 - idx) * 60 * 60 * 1000)
-  const timestamp = point.timestamp || point.time || point.bucketTime || fallbackTime.toISOString()
-  const time = point.time || new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+const DAY_MS = 24 * 60 * 60 * 1000
+const DAY_TICK_THRESHOLD_MS = DAY_MS
 
-  return {
-    ...point,
-    time,
-    timestamp,
-    cpu: toNumberOrZero(point.cpu ?? point.totalCpu ?? point.db2Cpu),
-    elapsed: toNumberOrZero(point.elapsed ?? point.totalElapsed ?? point.db2Elapsed),
-    getPages: toNumberOrZero(point.getPages ?? point.totalGetPages),
-    sqlCalls: toNumberOrZero(point.sqlCalls ?? point.totalSqlCalls),
+export const formatChartTick = (timestamp, spanMs) => {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  if (spanMs >= DAY_TICK_THRESHOLD_MS) {
+    return date.toLocaleDateString([], { day: '2-digit', month: 'short' })
   }
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-export const normalizePackage = (pkg, idx) => {
-  const totalCpu = toNumberOrZero(pkg.db2Cpu ?? pkg.totalCpu ?? pkg.cpu)
-  const totalSqlCalls = toNumberOrZero(pkg.sqlCalls ?? pkg.totalSqlCalls)
-  const totalElapsed = toNumberOrZero(pkg.db2Elapsed ?? pkg.totalElapsed ?? pkg.elapsed)
-  const totalGetPages = toNumberOrZero(pkg.getPages ?? pkg.totalGetPages)
+export const formatChartTooltipLabel = (timestamp) => {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString([], {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+}
 
-  const fallbackId = `${pkg.collection || 'COLL'}:${pkg.program || 'PROG'}:${pkg.consistencyToken || idx + 1}`
-  const defaultName = [pkg.collection, pkg.program].filter(Boolean).join('.') || `PACKAGE_${idx + 1}`
+export const formatAxisValue = (value) => {
+  if (value == null || Number.isNaN(value)) return ''
+  const abs = Math.abs(value)
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(0)}K`
+  return `${value}`
+}
+
+export const normalizeTrendPoint = (point) => ({
+  timestamp: new Date(point.timestamp).getTime(),
+  cpu: toNumber(point.db2Cpu),
+  elapsed: toNumber(point.db2Elapsed),
+  getPages: toNumber(point.getPages),
+  sqlCalls: toNumber(point.sqlCalls),
+})
+
+/**
+ * A package is uniquely identified by (collection, program, consistency token).
+ * The UI uses `packageKey` everywhere so favourites/reviewed survive refreshes.
+ */
+export const buildPackageKey = ({ collection, program, conToken }) =>
+  [collection ?? '', program ?? '', conToken ?? ''].join('::')
+
+export const normalizePackage = (pkg) => {
+  const totalCpu = toNumber(pkg.db2Cpu)
+  const totalElapsed = toNumber(pkg.db2Elapsed)
+  const totalGetPages = toNumber(pkg.getPages)
+  const totalSqlCalls = toNumber(pkg.sqlCalls)
+  const callsPerCpuMs = totalCpu > 0 ? totalSqlCalls / totalCpu : 0
 
   return {
-    ...pkg,
-    id: String(pkg.id ?? pkg.packageId ?? fallbackId),
-    name: pkg.name ?? pkg.packageName ?? defaultName,
-    program: pkg.program ?? pkg.programName ?? 'N/A',
+    collection: pkg.collection ?? '',
+    program: pkg.program ?? '',
+    conToken: pkg.conToken ?? '',
+    packageKey: buildPackageKey(pkg),
+    displayName: [pkg.collection, pkg.program].filter(Boolean).join('.') || pkg.program || '—',
     totalCpu,
-    totalSqlCalls,
     totalElapsed,
     totalGetPages,
-    sqlCallsToCpuRatio: totalCpu > 0 ? (totalSqlCalls / totalCpu).toFixed(2) : '0.00',
+    totalSqlCalls,
+    callsPerCpuMs: Number(callsPerCpuMs.toFixed(2)),
   }
 }
+
+export const normalizeStatement = (stmt, idx) => ({
+  id: `${stmt.conToken ?? 'CT'}-${stmt.statementNumber ?? idx}-${stmt.seqNumber ?? 0}`,
+  collection: stmt.collection ?? '',
+  program: stmt.program ?? '',
+  conToken: stmt.conToken ?? '',
+  statementNumber: stmt.statementNumber ?? null,
+  seqNumber: stmt.seqNumber ?? null,
+  sqlText: stmt.sqlText ?? '',
+  textToken: stmt.textToken ?? '',
+  totalCpu: toNumber(stmt.totalCpu),
+  totalElapsed: toNumber(stmt.totalElapsed),
+  totalGetPages: toNumber(stmt.totalGetPages),
+  executionCount: toNumber(stmt.executionCount),
+})
+
+export const normalizeBind = (bind, idx) => ({
+  id: bind.conToken ?? `bind-${idx}`,
+  conToken: bind.conToken ?? '',
+  bindTime: bind.bindTime ?? null,
+  version: bind.version ?? '',
+  isCurrent: idx === 0,
+})

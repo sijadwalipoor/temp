@@ -2,88 +2,75 @@ import { useEffect, useState } from 'react'
 import { dashboardAPI } from '../services/api'
 import {
   EMPTY_KPIS,
-  getApiErrorMessage,
-  normalizeKpiPayload,
+  getErrorMessage,
+  normalizeKpis,
   normalizePackage,
   normalizeTrendPoint,
 } from '../pages/dashboard.utils'
 
-export const useDashboardData = (interval, refreshCounter) => {
+const EMPTY_META = { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 }
+
+export const useDashboardData = ({ interval, pageNumber, pageSize, sortBy, refreshCounter }) => {
   const [chartData, setChartData] = useState([])
   const [packages, setPackages] = useState([])
   const [kpis, setKpis] = useState(EMPTY_KPIS)
+  const [meta, setMeta] = useState(EMPTY_META)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const loadDashboardData = async () => {
+    let cancelled = false
+
+    const load = async () => {
       setLoading(true)
       setError('')
 
-      try {
-        const [kpiResult, trendResult, packagesResult] = await Promise.allSettled([
-          dashboardAPI.getKPIs(interval),
-          dashboardAPI.getMetricsTrend(interval),
-          dashboardAPI.getWorstPackages({ ...interval, pageNumber: 1, pageSize: 500, sortBy: 'DB2_CPU' }),
-        ])
+      const [kpisResult, trendResult, worstResult] = await Promise.allSettled([
+        dashboardAPI.getKpis(interval),
+        dashboardAPI.getMetricsTrend(interval),
+        dashboardAPI.getWorstPackages({ ...interval, pageNumber, pageSize, sortBy }),
+      ])
 
-        const failedSections = []
+      if (cancelled) return
 
-        if (kpiResult.status === 'fulfilled') {
-          setKpis(normalizeKpiPayload(kpiResult.value.data))
-        } else {
-          failedSections.push(getApiErrorMessage(kpiResult, 'KPI data failed to load'))
-        }
+      const failures = []
 
-        if (trendResult.status === 'fulfilled') {
-          const trendPayload = trendResult.value.data?.data ?? trendResult.value.data ?? []
-          const normalizedTrend = Array.isArray(trendPayload)
-            ? trendPayload.map(normalizeTrendPoint)
-            : []
-          setChartData(normalizedTrend)
-        } else {
-          setChartData([])
-          failedSections.push(getApiErrorMessage(trendResult, 'Trend data failed to load'))
-        }
-
-        if (packagesResult.status === 'fulfilled') {
-          const packagePayload =
-            packagesResult.value.data?.items ??
-            packagesResult.value.data?.data?.items ??
-            packagesResult.value.data?.data ??
-            packagesResult.value.data ??
-            []
-
-          const normalizedPackages = Array.isArray(packagePayload)
-            ? packagePayload.map(normalizePackage)
-            : []
-
-          setPackages(normalizedPackages)
-        } else {
-          setPackages([])
-          failedSections.push(getApiErrorMessage(packagesResult, 'Package data failed to load'))
-        }
-
-        if (failedSections.length === 1) {
-          setError(failedSections[0])
-        } else if (failedSections.length > 1) {
-          setError(`Some dashboard sections failed to load: ${failedSections.join(' | ')}`)
-        }
-      } catch (err) {
-        setError(err?.response?.data?.message || 'Failed to load dashboard data')
-      } finally {
-        setLoading(false)
+      if (kpisResult.status === 'fulfilled') {
+        setKpis(normalizeKpis(kpisResult.value))
+      } else {
+        setKpis(EMPTY_KPIS)
+        failures.push(getErrorMessage(kpisResult.reason, 'KPIs failed to load'))
       }
+
+      if (trendResult.status === 'fulfilled') {
+        const points = Array.isArray(trendResult.value) ? trendResult.value : []
+        setChartData(points.map(normalizeTrendPoint))
+      } else {
+        setChartData([])
+        failures.push(getErrorMessage(trendResult.reason, 'Trend failed to load'))
+      }
+
+      if (worstResult.status === 'fulfilled') {
+        const items = Array.isArray(worstResult.value.data) ? worstResult.value.data : []
+        setPackages(items.map(normalizePackage))
+        setMeta({ ...EMPTY_META, ...(worstResult.value.meta ?? {}) })
+      } else {
+        setPackages([])
+        setMeta(EMPTY_META)
+        failures.push(getErrorMessage(worstResult.reason, 'Packages failed to load'))
+      }
+
+      if (failures.length > 0) {
+        setError(failures.join(' | '))
+      }
+      setLoading(false)
     }
 
-    loadDashboardData()
-  }, [interval, refreshCounter])
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [interval, pageNumber, pageSize, sortBy, refreshCounter])
 
-  return {
-    chartData,
-    packages,
-    kpis,
-    loading,
-    error,
-  }
+  return { chartData, packages, kpis, meta, loading, error }
 }

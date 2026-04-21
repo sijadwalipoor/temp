@@ -1,194 +1,81 @@
 import axios from 'axios'
 
-// Configure your backend URL here
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api'
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
+  timeout: 30_000,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const envelope = error.response?.data
+    if (envelope?.error?.message) {
+      error.message = envelope.error.message
+    }
+    return Promise.reject(error)
   },
+)
+
+/**
+ * Every backend endpoint returns ApiResponse<T> = { data, meta, error }.
+ * These helpers unwrap that envelope so pages stay unaware of the shape.
+ */
+const unwrap = (response) => response.data?.data
+const unwrapWithMeta = (response) => ({
+  data: response.data?.data,
+  meta: response.data?.meta,
 })
 
-// Add auth token if needed
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('authToken')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
+export const healthAPI = {
+  ping: () => apiClient.get('/health').then(unwrap),
+}
 
-// API Endpoints for Dashboard
 export const dashboardAPI = {
-  getKPIs: ({ from, to }) => {
-    return apiClient.get('/dashboard/kpis', {
-      params: { from, to }
-    })
-  },
+  getKpis: ({ from, to }) =>
+    apiClient.get('/dashboard/kpis', { params: { from, to } }).then(unwrap),
 
-  getMetricsTrend: ({ from, to }) => {
-    return apiClient.get('/dashboard/metrics-trend', {
-      params: { from, to }
-    })
-  },
+  getMetricsTrend: ({ from, to }) =>
+    apiClient.get('/dashboard/metrics-trend', { params: { from, to } }).then(unwrap),
 
-  getWorstPackages: ({
-    from,
-    to,
-    page,
-    pageNumber,
-    pageSize = 15,
-    sortBy = 'DB2_CPU'
-  } = {}) => {
-    return apiClient.get('/dashboard/worst-packages', {
-      params: {
-        from,
-        to,
-        pageNumber: pageNumber ?? page ?? 1,
-        pageSize,
-        sortBy,
-      }
-    })
-  },
-
-  getWorstStatements: ({ from, to, page = 1, pageSize = 50, sortBy = 'getPages' } = {}) => {
-    return apiClient.get('/dashboard/worst-statements', {
-      params: { from, to, page, pageSize, sortBy }
-    })
-  },
-
-  searchStatements: ({ query, from, to, page = 1, pageSize = 50 } = {}) => {
-    return apiClient.get('/dashboard/search-statements', {
-      params: { query, from, to, page, pageSize }
-    })
-  },
+  getWorstPackages: ({ from, to, pageNumber = 1, pageSize = 25, sortBy = 'DB2_CPU' } = {}) =>
+    apiClient
+      .get('/dashboard/worst-packages', { params: { from, to, pageNumber, pageSize, sortBy } })
+      .then(unwrapWithMeta),
 }
 
-// API Endpoints for Package Analyzer
 export const packageAPI = {
-  getPackage: (packageName) => {
-    return apiClient.get(`/packages/${packageName}`)
-  },
+  listPackages: ({ topN = 150, showBinds = false, showSqlStatements = false } = {}) =>
+    apiClient
+      .get('/packages', { params: { topN, showBinds, showSqlStatements } })
+      .then(unwrap),
 
-  listPackages: ({ page = 1, pageSize = 50, search = '' } = {}) => {
-    return apiClient.get('/packages', {
-      params: {
-        topN: pageSize,
-        page,
-        pageSize,
-        search,
-      }
-    })
-  },
+  searchPackages: ({ q, limit = 50 } = {}) =>
+    apiClient.get('/packages/search', { params: { q, limit } }).then(unwrap),
 
-  getPackagePerformanceTrend: (packageName, { from, to } = {}) => {
-    return apiClient.get(`/packages/${packageName}/trend`, {
-      params: { from, to }
-    })
-  },
+  getPackageDetails: (packageName, { showBinds = true, showSqlStatements = false } = {}) =>
+    apiClient
+      .get(`/packages/${encodeURIComponent(packageName)}`, {
+        params: { showBinds, showSqlStatements },
+      })
+      .then(unwrap),
 
-  getBindingHistory: (packageName) => {
-    return apiClient.get(`/packages/${packageName}/binds`)
-  },
+  getBindsByPackage: (packageName) =>
+    apiClient.get(`/packages/${encodeURIComponent(packageName)}/binds`).then(unwrap),
 
-  getPackageStatements: (
-    packageName,
-    { page = 1, pageSize = 50, sortBy = 'getPages', search = '', from, to } = {}
-  ) => {
-    return apiClient.get(`/packages/${packageName}/statements`, {
-      params: { page, pageSize, sortBy, search, from, to }
-    })
-  },
+  getStatementsByBind: (packageName, conToken) =>
+    apiClient
+      .get(
+        `/packages/${encodeURIComponent(packageName)}/binds/${encodeURIComponent(conToken)}/statements`,
+      )
+      .then(unwrap),
 
-  rebindPackage: (packageName, options = {}) => {
-    return apiClient.post(`/packages/${packageName}/rebind`, options)
-  },
-}
-
-// API Endpoints for Statement Analyzer
-export const statementAPI = {
-  getStatement: (statementId) => {
-    return apiClient.get(`/statements/${statementId}`)
-  },
-
-  getStatementMetrics: (statementId, { from, to } = {}) => {
-    return apiClient.get(`/statements/${statementId}/metrics`, {
-      params: { from, to }
-    })
-  },
-
-  getStatementTrend: (statementId, { from, to } = {}) => {
-    return apiClient.get(`/statements/${statementId}/trend`, {
-      params: { from, to }
-    })
-  },
-
-  getReferencedTables: (statementId) => {
-    return apiClient.get(`/statements/${statementId}/tables`)
-  },
-
-  getTableStatistics: (tableName) => {
-    return apiClient.get(`/tables/${tableName}/statistics`)
-  },
-}
-
-// API Endpoints for Access Path Viewer
-export const explainAPI = {
-  getCurrentExplain: ({ statementId, contoken, from, to }) => {
-    return apiClient.get(`/explain/current`, {
-      params: { statementId, contoken, from, to }
-    })
-  },
-
-  getPreviousExplain: ({ statementId, from, to }) => {
-    return apiClient.get(`/explain/previous`, {
-      params: { statementId, from, to }
-    })
-  },
-
-  listStatements: ({ from, to, page = 1, pageSize = 100 } = {}) => {
-    return apiClient.get('/explain/statements', {
-      params: { from, to, page, pageSize }
-    })
-  },
-
-  runDynamicExplain: (sqlText, options = {}) => {
-    return apiClient.post('/explain/dynamic', {
-      sqlText,
-      options,
-    })
-  },
-
-  compareExplainPlans: ({ currentId, previousId, statementId, from, to }) => {
-    return apiClient.get('/explain/compare', {
-      params: { currentId, previousId, statementId, from, to }
-    })
-  },
-}
-
-// API Endpoints for Settings/Configuration
-export const configAPI = {
-  getSettings: () => {
-    return apiClient.get('/config/settings')
-  },
-
-  updateSettings: (settings) => {
-    return apiClient.put('/config/settings', settings)
-  },
-
-  getAvailableCollections: () => {
-    return apiClient.get('/config/collections')
-  },
-
-  getAvailableSubsystems: () => {
-    return apiClient.get('/config/subsystems')
-  },
-}
-
-// Health check
-export const healthCheck = () => {
-  return apiClient.get('/health')
+  getMetricsTrend: (packageName, { from, to } = {}) =>
+    apiClient
+      .get(`/packages/${encodeURIComponent(packageName)}/metrics-trend`, { params: { from, to } })
+      .then(unwrap),
 }
 
 export default apiClient

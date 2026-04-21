@@ -6,16 +6,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // IBM Color Palette
-        primary: '#0043ce',      // IBM Blue
-        primaryDark: '#002d9c',  // Dark IBM Blue
-        secondary: '#525252',    // IBM Gray
-        dark: '#161616',         // IBM Dark
-        light: '#f4f4f4',        // IBM Light Gray
-        danger: '#da1e28',       // IBM Red
-        warning: '#f1c21b',      // IBM Yellow
-        success: '#24a148',      // IBM Green
-        info: '#0043ce',         // IBM Blue
+        primary: '#cd3434',      // Brand red
+        primaryDark: '#a52828',  // Darker hover variant
+        secondary: '#525252',
+        dark: '#161616',
+        light: '#f4f4f4',
+        danger: '#da1e28',
+        warning: '#f1c21b',
+        success: '#24a148',
+        info: '#cd3434',
       },
       fontFamily: {
         sans: ['IBM Plex Sans', 'system-ui', '-apple-system', 'sans-serif'],

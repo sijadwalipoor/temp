@@ -25,9 +25,17 @@ export const getIntervalFromNow = ({ hours = 24 } = {}) => {
   }
 }
 
+export const PRESETS = [
+  { value: 'last1Hour', label: 'Last hour', hours: 1 },
+  { value: 'last6Hours', label: 'Last 6h', hours: 6 },
+  { value: 'last24Hours', label: 'Last 24h', hours: 24 },
+  { value: 'last7Days', label: 'Last 7d', hours: 24 * 7 },
+  { value: 'last30Days', label: 'Last 30d', hours: 24 * 30 },
+]
+
 export const getIntervalForPreset = (preset) => {
-  if (preset === 'last7Days') return getIntervalFromNow({ hours: 24 * 7 })
-  return getIntervalFromNow({ hours: 24 })
+  const match = PRESETS.find((p) => p.value === preset)
+  return getIntervalFromNow({ hours: match ? match.hours : 24 })
 }
 
 export const formatIntervalLabel = ({ from, to }) => {

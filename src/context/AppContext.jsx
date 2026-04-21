@@ -1,86 +1,32 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import { getCookie, setCookie } from '../utils/cookies'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-export const AppContext = createContext()
+const SIDEBAR_STORAGE_KEY = 'db2perf.sidebarCollapsed'
 
-const defaultSettings = {
-  defaultIntervalHours: 24,
-  statsWarningThreshold: 30,
-  itemsPerPage: 50,
+const readStoredBool = (key) => {
+  try {
+    return localStorage.getItem(key) === 'true'
+  } catch {
+    return false
+  }
 }
 
-const defaultFilters = {
-  search: '',
-  sortBy: 'getPages',
-}
-
-const defaultUser = {
-  name: 'DBA User',
-  role: 'admin',
-  authenticated: true,
-}
+export const AppContext = createContext(null)
 
 export const AppProvider = ({ children }) => {
-  // Initialize state from cookies or use defaults
-  const [settings, setSettings] = useState(() => getCookie('appSettings') || defaultSettings)
-  const [filters, setFilters] = useState(() => getCookie('appFilters') || defaultFilters)
-  const [user, setUser] = useState(() => getCookie('appUser') || defaultUser)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getCookie('sidebarCollapsed') || false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStoredBool(SIDEBAR_STORAGE_KEY))
 
-  // Save settings to cookie whenever they change
   useEffect(() => {
-    setCookie('appSettings', settings)
-  }, [settings])
-
-  // Save filters to cookie whenever they change
-  useEffect(() => {
-    setCookie('appFilters', filters)
-  }, [filters])
-
-  // Save user to cookie whenever they change
-  useEffect(() => {
-    setCookie('appUser', user)
-  }, [user])
-
-  // Save sidebar state to cookie whenever it changes
-  useEffect(() => {
-    setCookie('sidebarCollapsed', sidebarCollapsed)
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarCollapsed))
   }, [sidebarCollapsed])
 
-  const updateSettings = (newSettings) => {
-    setSettings(prev => ({
-      ...prev,
-      ...newSettings
-    }))
-  }
+  const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), [])
 
-  const updateFilters = (newFilters) => {
-    setFilters(prev => ({
-      ...prev,
-      ...newFilters
-    }))
-  }
-
-  const toggleSidebar = () => {
-    setSidebarCollapsed(prev => !prev)
-  }
-
-  const value = {
-    settings,
-    updateSettings,
-    filters,
-    updateFilters,
-    user,
-    setUser,
-    sidebarCollapsed,
-    toggleSidebar,
-  }
-
-  return (
-    <AppContext.Provider value={value}>
-      {children}
-    </AppContext.Provider>
+  const value = useMemo(
+    () => ({ sidebarCollapsed, toggleSidebar }),
+    [sidebarCollapsed, toggleSidebar],
   )
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 
 export const useAppContext = () => {

@@ -1,19 +1,22 @@
-export const REVIEWED_PACKAGES_STORAGE_KEY = 'dashboardReviewedPackages'
-export const FAVORITE_PACKAGES_STORAGE_KEY = 'dashboardFavoritePackages'
+export const REVIEWED_PACKAGES_STORAGE_KEY = 'db2perf.reviewedPackages'
+export const FAVORITE_PACKAGES_STORAGE_KEY = 'db2perf.favoritePackages'
 
-export const readPackageIdSet = (key) => {
+/**
+ * Reviewed / favourite packages are persisted client-side keyed by `packageKey`
+ * (collection::program::conToken) so the selection survives refreshes without
+ * requiring a backend user profile.
+ */
+export const readPackageMap = (key) => {
   try {
     const raw = localStorage.getItem(key)
-    if (!raw) return new Set()
+    if (!raw) return {}
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return new Set()
-    return new Set(parsed.map((value) => String(value)))
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
   } catch {
-    return new Set()
+    return {}
   }
 }
 
-export const writePackageIdSet = (key, values) => {
-  const normalized = Array.from(values || []).map((value) => String(value))
-  localStorage.setItem(key, JSON.stringify(normalized))
+export const writePackageMap = (key, map) => {
+  localStorage.setItem(key, JSON.stringify(map ?? {}))
 }
